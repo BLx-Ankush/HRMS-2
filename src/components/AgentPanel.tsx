@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useSyncExternalStore } from "react";
 import { Bot, Send, Settings2, Loader2 } from "lucide-react";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger,
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
+import { webmcp } from "@/lib/webmcp/registry";
 import {
   runAgentTurn, loadKey, saveKey, loadModel, saveModel,
   loadBaseUrl, saveBaseUrl, DEFAULT_BASE_URL, type ChatMsg,
@@ -18,9 +19,23 @@ import {
  * an OpenAI tool-calling loop the admin powers with their own key — so the
  * cooperative demo is reproducible in ANY browser, and no secret ships in the
  * frontend. Writes still pause on the shared approval dialog.
+ *
+ * It unmounts itself the moment a native client attaches. A floating "HR agent"
+ * chat button is an attractive nuisance to a browser agent: given both a chat box
+ * and 25 registered tools, ChatGPT's built-in browser used Computer Use to type
+ * "use only the WebMCP read tools list_employees and get_employee" into this
+ * panel rather than calling them itself — delegating to our LLM loop instead of
+ * using the protocol. Removing the affordance removes the choice: when the tools
+ * are live, calling them is the only way to act on this page. Pass
+ * `?agentpanel=1` to force it back for a side-by-side comparison.
  */
 export function AgentPanel() {
   const { user } = useAuth();
+  const status = useSyncExternalStore(
+    (cb) => webmcp.subscribe(cb),
+    () => webmcp.snapshot(),
+    () => webmcp.snapshot()
+  );
   const [open, setOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [key, setKey] = useState(loadKey);
@@ -33,6 +48,12 @@ export function AgentPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = user?.role === "admin";
+  // A real client is attached and holding our tools, so this panel is redundant —
+  // and worse, it is something an agent can type into instead of calling them.
+  const nativeLive = status.nativeAvailable && status.nativeToolCount > 0;
+  const forced =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("agentpanel") === "1";
 
   useEffect(() => {
     if (!key) setShowSettings(true);
@@ -43,6 +64,7 @@ export function AgentPanel() {
   }, [messages, busy]);
 
   if (!isAdmin) return null;
+  if (nativeLive && !forced) return null;
 
   const persistKey = (v: string) => { setKey(v); saveKey(v); };
   const persistModel = (v: string) => { setModel(v); saveModel(v); };

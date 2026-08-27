@@ -7,7 +7,8 @@ import { useAuth } from "@/contexts/AuthContext";
  * Small on-page badge showing whether the browser's native WebMCP surface picked
  * up our tools. This exists so "are the tools actually exposed?" is an
  * observable fact during testing and on camera during the demo — not a guess.
- * Admin-only, since only admins get tools registered.
+ * Admin-only: employees get tools too (their own record plus the page-state and
+ * UI tools), but the registration diagnostics are an operator concern.
  */
 export function WebMcpStatusBadge() {
   const { user } = useAuth();
@@ -51,6 +52,14 @@ export function WebMcpStatusBadge() {
             <Row label="Registered" value={`${status.nativeToolCount} / ${status.toolCount}`} />
             {status.lastError && <Row label="Last error" value={status.lastError} />}
           </dl>
+          {live && (
+            <p className="mb-2 text-muted-foreground">
+              A native client is holding these tools, so the in-page agent panel is
+              hidden: an agent on this page has no chat box to type into and must
+              call the tools directly. Add <code>?agentpanel=1</code> to the URL to
+              bring it back for a side-by-side comparison.
+            </p>
+          )}
           {!live && (
             <p className="mb-2 text-muted-foreground">
               No in-browser agent surface detected here — tools still work via the
