@@ -41,4 +41,7 @@ declare global {
   interface Document {
     modelContext?: ModelContext;
   }
+  interface Navigator {
+    modelContext?: ModelContext;
+  }
 }

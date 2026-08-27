@@ -39,7 +39,12 @@ class WebMcpRegistry {
   }
 
   private registerNative(d: McpToolDescriptor, signal?: AbortSignal) {
-    const mc = typeof document !== "undefined" ? document.modelContext : undefined;
+    // The spec's surface has moved over time. Current Chrome / ChatGPT expose it
+    // as navigator.modelContext; older drafts used document.modelContext. Try the
+    // current one first, then fall back, so we're discovered on either build.
+    const mc =
+      (typeof navigator !== "undefined" ? navigator.modelContext : undefined) ??
+      (typeof document !== "undefined" ? document.modelContext : undefined);
     if (!mc?.registerTool) return; // no native surface — mirror-only is fine
     try {
       // Preferred: descriptor + options (with AbortSignal for teardown).
