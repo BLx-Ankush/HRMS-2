@@ -8,6 +8,7 @@ import { RealtimeSync } from "@/hooks/useRealtimeSync";
 import { WebMcpTools } from "@/hooks/useWebMcpTools";
 import { AgentApprovalDialog } from "@/components/AgentApprovalDialog";
 import { AgentPanel } from "@/components/AgentPanel";
+import { WebMcpStatusBadge } from "@/components/WebMcpStatusBadge";
 import Index from "./pages/Index";
 import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
@@ -33,6 +34,7 @@ const App = () => (
         <WebMcpTools />
         <AgentApprovalDialog />
         <AgentPanel />
+        <WebMcpStatusBadge />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />

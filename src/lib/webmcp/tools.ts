@@ -34,6 +34,8 @@ export function buildAdminTools(qc: QueryClient): McpToolDescriptor[] {
     // ---------------- Reads ----------------
     {
       name: "list_employees",
+      title: "List employees",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       description:
         "List employees in the HRMS directory. Optionally filter by a free-text query (matches name, email, employee ID, position), department, or status.",
       inputSchema: obj({
@@ -65,6 +67,8 @@ export function buildAdminTools(qc: QueryClient): McpToolDescriptor[] {
     },
     {
       name: "get_employee",
+      title: "Get employee profile",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       description: "Fetch a single employee's full profile by employee ID (e.g. 'EMP003').",
       inputSchema: obj({ employeeId: str("The employee ID to look up.") }, ["employeeId"]),
       execute: async (args) => {
@@ -78,6 +82,8 @@ export function buildAdminTools(qc: QueryClient): McpToolDescriptor[] {
     },
     {
       name: "list_leave_requests",
+      title: "List leave requests",
+      annotations: { readOnlyHint: true, idempotentHint: true },
       description:
         "List leave requests. Optionally filter by status (pending/approved/rejected). Use this to find the requestId before approving or rejecting.",
       inputSchema: obj({
@@ -100,6 +106,8 @@ export function buildAdminTools(qc: QueryClient): McpToolDescriptor[] {
     // ---------------- Writes (human-approval gated) ----------------
     {
       name: "add_employee",
+      title: "Add employee",
+      annotations: { destructiveHint: false },
       description:
         "Add a new employee to the roster. Drafts the record and asks the admin to confirm before saving. Requires employeeId, name, email, department, and position.",
       inputSchema: obj(
@@ -161,6 +169,8 @@ export function buildAdminTools(qc: QueryClient): McpToolDescriptor[] {
     },
     {
       name: "update_employee",
+      title: "Update employee",
+      annotations: { destructiveHint: true },
       description:
         "Update fields on an existing employee. Only the fields you provide are changed. Asks the admin to confirm before saving.",
       inputSchema: obj(
@@ -213,6 +223,8 @@ export function buildAdminTools(qc: QueryClient): McpToolDescriptor[] {
     },
     {
       name: "decide_leave",
+      title: "Approve or reject leave",
+      annotations: { destructiveHint: true },
       description:
         "Approve or reject a pending leave request. Use list_leave_requests first to get the requestId. Asks the admin to confirm the decision.",
       inputSchema: obj(
