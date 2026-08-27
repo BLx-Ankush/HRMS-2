@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  runAgentTurn, loadKey, saveKey, loadModel, saveModel, type ChatMsg,
+  runAgentTurn, loadKey, saveKey, loadModel, saveModel,
+  loadBaseUrl, saveBaseUrl, DEFAULT_BASE_URL, type ChatMsg,
 } from "@/lib/webmcp/agentClient";
 
 /**
@@ -24,6 +25,7 @@ export function AgentPanel() {
   const [showSettings, setShowSettings] = useState(false);
   const [key, setKey] = useState(loadKey);
   const [model, setModel] = useState(loadModel);
+  const [baseUrl, setBaseUrl] = useState(loadBaseUrl);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -44,6 +46,7 @@ export function AgentPanel() {
 
   const persistKey = (v: string) => { setKey(v); saveKey(v); };
   const persistModel = (v: string) => { setModel(v); saveModel(v); };
+  const persistBaseUrl = (v: string) => { setBaseUrl(v); saveBaseUrl(v); };
 
   async function send() {
     const text = input.trim();
@@ -55,7 +58,7 @@ export function AgentPanel() {
     setMessages(next);
     setBusy(true);
     try {
-      const { messages: updated } = await runAgentTurn(key, model, next);
+      const { messages: updated } = await runAgentTurn({ key, model, baseUrl }, next);
       setMessages(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -93,15 +96,32 @@ export function AgentPanel() {
         {showSettings && (
           <div className="space-y-3 border-b bg-muted/30 p-4">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">OpenAI API key (stays in your browser)</label>
+              <label className="text-xs font-medium text-muted-foreground">API key (stays in your browser)</label>
               <Input type="password" placeholder="sk-..." value={key} onChange={(e) => persistKey(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                API base URL (OpenAI-compatible)
+              </label>
+              <Input
+                value={baseUrl}
+                onChange={(e) => persistBaseUrl(e.target.value)}
+                placeholder={DEFAULT_BASE_URL}
+                spellCheck={false}
+              />
+              <p className="text-xs text-muted-foreground">
+                Point this at any OpenAI-compatible endpoint (a proxy, Azure gateway,
+                OpenRouter, a local server). Paste the base ending in <code>/v1</code> —
+                <code>/chat/completions</code> is appended for you.
+              </p>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Model</label>
               <Input value={model} onChange={(e) => persistModel(e.target.value)} placeholder="gpt-4o-mini" />
             </div>
             <p className="text-xs text-muted-foreground">
-              Your key is sent directly to OpenAI from this browser and never leaves your device otherwise.
+              Your key is stored only in this browser and sent directly to the endpoint above.
+              The provider must allow browser requests (CORS) for this to work.
             </p>
           </div>
         )}

@@ -24,14 +24,35 @@ interface OpenAiToolCall {
   function: { name: string; arguments: string };
 }
 
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+export const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const KEY_STORAGE = "hrms.agent.openai_key";
 const MODEL_STORAGE = "hrms.agent.model";
+const BASE_URL_STORAGE = "hrms.agent.base_url";
 
 export const loadKey = () => localStorage.getItem(KEY_STORAGE) ?? "";
 export const saveKey = (k: string) => localStorage.setItem(KEY_STORAGE, k);
 export const loadModel = () => localStorage.getItem(MODEL_STORAGE) ?? "gpt-4o-mini";
 export const saveModel = (m: string) => localStorage.setItem(MODEL_STORAGE, m);
+export const loadBaseUrl = () => localStorage.getItem(BASE_URL_STORAGE) ?? DEFAULT_BASE_URL;
+export const saveBaseUrl = (u: string) => localStorage.setItem(BASE_URL_STORAGE, u);
+
+/** Where the agent's model lives. Any OpenAI-compatible endpoint works. */
+export interface AgentConfig {
+  key: string;
+  model: string;
+  /** Base like "https://proxy.example.com/v1", or a full chat-completions URL. */
+  baseUrl: string;
+}
+
+/**
+ * Turn whatever the admin typed into a chat-completions URL. Accepts a bare
+ * base ("…/v1"), a base with a trailing slash, or an already-complete endpoint
+ * ("…/v1/chat/completions") so proxy users can paste either form.
+ */
+export function resolveEndpoint(baseUrl: string): string {
+  const base = (baseUrl || DEFAULT_BASE_URL).trim().replace(/\/+$/, "");
+  return base.endsWith("/chat/completions") ? base : `${base}/chat/completions`;
+}
 
 export const SYSTEM_PROMPT =
   "You are the HRMS admin assistant. Use the provided tools to read and modify " +
@@ -55,21 +76,32 @@ interface RunResult {
   toolNotes: string[];
 }
 
-async function callOpenAi(key: string, model: string, messages: ChatMsg[]) {
-  const res = await fetch(OPENAI_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
-      tools: openAiTools(),
-      tool_choice: "auto",
-      temperature: 0.2,
-    }),
-  });
+async function callChatCompletions(cfg: AgentConfig, messages: ChatMsg[]) {
+  const url = resolveEndpoint(cfg.baseUrl);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.key}` },
+      body: JSON.stringify({
+        model: cfg.model,
+        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
+        tools: openAiTools(),
+        tool_choice: "auto",
+        temperature: 0.2,
+      }),
+    });
+  } catch (e) {
+    // Most common cause with a custom base URL: the proxy doesn't send CORS
+    // headers for browser origins, so the request never leaves the page.
+    throw new Error(
+      `Could not reach ${url}. If this is a proxy, check the URL and that it ` +
+        `allows browser requests (CORS). Original error: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(`OpenAI ${res.status}: ${detail.slice(0, 300) || res.statusText}`);
+    throw new Error(`${url} → ${res.status}: ${detail.slice(0, 300) || res.statusText}`);
   }
   const data = await res.json();
   return data.choices?.[0]?.message as {
@@ -84,8 +116,7 @@ async function callOpenAi(key: string, model: string, messages: ChatMsg[]) {
  * it returns a plain text answer. Bounded by maxSteps to avoid runaway loops.
  */
 export async function runAgentTurn(
-  key: string,
-  model: string,
+  cfg: AgentConfig,
   history: ChatMsg[],
   maxSteps = 6
 ): Promise<RunResult> {
@@ -93,7 +124,7 @@ export async function runAgentTurn(
   const toolNotes: string[] = [];
 
   for (let step = 0; step < maxSteps; step++) {
-    const reply = await callOpenAi(key, model, messages);
+    const reply = await callChatCompletions(cfg, messages);
     const toolCalls = reply.tool_calls ?? [];
 
     messages.push({
