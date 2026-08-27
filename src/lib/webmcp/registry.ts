@@ -49,6 +49,9 @@ function detectSurface(): { mc: ModelContext; surface: "document" | "navigator" 
 
 class WebMcpRegistry {
   private tools = new Map<string, McpToolDescriptor>();
+  /** Names the native surface has actually accepted. Re-registering one of these
+   *  is a rejection, so this is what makes republishing idempotent. */
+  private nativeNames = new Set<string>();
   private listeners = new Set<Listener>();
   private watchTimer: ReturnType<typeof setInterval> | null = null;
   private lastSignal?: AbortSignal;
@@ -74,7 +77,7 @@ class WebMcpRegistry {
     const unregister = () => {
       descriptors.forEach((d) => this.tools.delete(d.name));
       this.status.toolCount = this.tools.size;
-      this.status.nativeToolCount = 0;
+      this.retractNative(descriptors.map((d) => d.name));
       if (this.tools.size === 0) this.stopNativeWatch();
       this.emit();
     };
@@ -102,7 +105,19 @@ class WebMcpRegistry {
     }
   }
 
-  /** Hand the current tool set to the browser, whatever shape it accepts. */
+  /** Hand the current tool set to the browser, whatever shape it accepts.
+   *
+   *  `registerTool` is ASYNC: per spec it returns a promise that rejects if the
+   *  name is already registered, if name/description are empty, or if the input
+   *  schema is invalid. A try/catch alone therefore sees nothing — the earlier
+   *  version of this method counted every call as a success and swallowed the
+   *  rejection, so the status badge could claim tools were live when the browser
+   *  had refused them. We settle each promise, count only the ones that resolve,
+   *  and surface the first rejection reason.
+   *
+   *  Names already accepted by the native surface are skipped, because
+   *  re-registering an existing name is itself a rejection: on a role change we
+   *  would otherwise "re-publish" 25 tools and record 25 duplicate-name errors. */
   private publishNative(signal?: AbortSignal) {
     const found = detectSurface();
     this.status.nativeAvailable = !!found;
@@ -113,24 +128,35 @@ class WebMcpRegistry {
     const all = Array.from(this.tools.values());
 
     if (typeof mc.registerTool === "function") {
-      let ok = 0;
+      this.status.method = "registerTool";
       for (const d of all) {
+        if (this.nativeNames.has(d.name)) continue;
+        // Claim the name up front so a second publish in the same tick cannot
+        // register it twice; released again if the browser rejects it.
+        this.nativeNames.add(d.name);
         try {
-          // Current shape: a single descriptor argument.
-          mc.registerTool(d);
-          ok++;
-        } catch (first) {
-          try {
-            // Some origin-trial builds accept (descriptor, { signal }).
-            mc.registerTool(d, signal ? { signal } : undefined);
-            ok++;
-          } catch (second) {
-            this.status.lastError = second instanceof Error ? second.message : String(second);
-          }
+          // Passing the options object is safe on builds that ignore a second
+          // argument, and on builds that honor it the AbortSignal is what
+          // removes the tool again on logout.
+          const ret = mc.registerTool(d, signal ? { signal } : undefined);
+          Promise.resolve(ret).then(
+            () => {
+              this.status.nativeToolCount = this.nativeNames.size;
+              this.emit();
+            },
+            (err: unknown) => {
+              this.nativeNames.delete(d.name);
+              this.status.nativeToolCount = this.nativeNames.size;
+              this.status.lastError = `${d.name}: ${err instanceof Error ? err.message : String(err)}`;
+              this.emit();
+            },
+          );
+        } catch (err) {
+          this.nativeNames.delete(d.name);
+          this.status.lastError = `${d.name}: ${err instanceof Error ? err.message : String(err)}`;
         }
       }
-      this.status.method = "registerTool";
-      this.status.nativeToolCount = ok;
+      this.status.nativeToolCount = this.nativeNames.size;
       return;
     }
 
@@ -148,6 +174,23 @@ class WebMcpRegistry {
         this.status.lastError = err instanceof Error ? err.message : String(err);
       }
     }
+  }
+
+  /** Drop names from the native surface so they can be re-registered later.
+   *  The spec's teardown is the AbortSignal we passed at registration; this also
+   *  calls `unregisterTool` when the build exposes it, and clears our own record
+   *  either way so a later publish is not treated as a duplicate. */
+  private retractNative(names: string[]) {
+    const mc = detectSurface()?.mc;
+    for (const name of names) {
+      if (!this.nativeNames.delete(name)) continue;
+      try {
+        mc?.unregisterTool?.(name);
+      } catch {
+        // Older builds have no unregisterTool; the AbortSignal covers those.
+      }
+    }
+    this.status.nativeToolCount = this.nativeNames.size;
   }
 
   /** Tool metadata for the in-page Agent panel and for LLM tool-calling. */

@@ -46,6 +46,8 @@ export interface ModelContext {
     descriptor: McpToolDescriptor,
     options?: McpRegisterOptions
   ) => unknown;
+  /** Present in some builds; the spec's own teardown path is the AbortSignal. */
+  unregisterTool?: (name: string) => unknown;
   /** Older/alternate API: replace the entire tool set at once. */
   provideContext?: (arg: unknown) => unknown;
   getTools?: () => unknown;
