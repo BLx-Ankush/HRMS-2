@@ -26,17 +26,46 @@ bot acting on its own.
 
 ## What the agent can do
 
-Read tools (no approval needed):
+**25 tools**, scoped by role: every signed-in user gets the page-state and own-record tools;
+the roster, leave, verification and bonus tools are registered **only** for admins, so an
+employee's agent cannot even see them.
 
-- `list_employees` — search/filter the roster by text, department, or status
-- `get_employee` — full profile by employee ID
-- `list_leave_requests` — find requests (and their IDs) by status
+### Tools a server-side API could not provide
 
-Write tools (each gated by human approval):
+These are the reason this is a WebMCP submission and not a REST integration. Each one reads
+or writes state that exists **only inside the human's live tab**:
 
-- `add_employee` — add a full employee record (all fields)
-- `update_employee` — patch any subset of an employee's fields
-- `decide_leave` — approve or reject a pending leave request
+| Tool | Why no API can do this |
+| --- | --- |
+| `get_page_context` | Returns the screen the human is actually on, their filters, the row they have expanded, and what the agent has drawn — live React state, not database rows |
+| `navigate_to` / `focus_employee` / `filter_directory` | Actuate the human's own UI: change route, scroll and highlight a row, apply directory filters. The agent works *on the page with you*, not behind it |
+| `read_contribution_import` | Reads a work-export file the HR user dropped onto the page. It was parsed in the tab and **never uploaded** — there is no URL a server could fetch |
+| `propose_bonus_pool` / `get_award_shortlist` | Compute a payout split or award shortlist and **draw it on HR's screen** as an unsaved proposal |
+| `record_bonus_decision` | Takes **no amounts as arguments** — it commits the proposal held in live page state, so an agent cannot pay out a figure the human never saw |
+
+### Read tools
+
+- `get_policy`, `get_scoring_model` — the company's own rules, so the agent quotes policy
+  instead of inventing it
+- `list_employees`, `get_employee`, `list_leave_requests`, `get_compensation`
+- `get_capacity_matrix`, `check_leave_coverage` — deterministic simulation of who would be
+  left covering what if a leave request were approved
+- `get_contribution_scores` — ranked contribution board with the arithmetic behind every
+  point, plus points blocked behind unverified claims
+- `get_my_contributions` — an employee's own score, rank, evidence and what HR still owes them
+
+### Write tools (each gated by in-page human approval)
+
+- `add_employee` — a full employee record
+- `add_employee_from_description` — onboard from one sentence of prose; the next free employee
+  ID, the department (snapped onto one already in use), a house-style work email and the join
+  date are derived against the live roster, duplicates are caught before anything is written,
+  and the draft marks which values were **stated** versus **inferred**
+- `update_employee`, `decide_leave`
+- `log_contribution` — file your own work as a claim; filing under someone else's ID is refused
+- `verify_contribution` — HR verifies or rejects a claim; only verified rows ever score
+- `review_pending_contributions` — highlights the unreviewed backlog on HR's screen
+- `record_bonus_decision` — the only tool that commits money
 
 Because the tools call the **exact same Supabase logic the UI hooks use**
 (`src/hooks/hrms.ts`), an agent action and a human action travel identical paths and both
@@ -69,19 +98,51 @@ Key pieces (all under `src/lib/webmcp/` and `src/components/`):
 - **`approval.ts` + `AgentApprovalDialog.tsx`** — the human-in-the-loop bridge. A mutating
   tool calls `requireApproval()`, which returns a Promise that resolves only when the admin
   clicks Confirm/Cancel. This works identically for the native agent and the in-page panel.
-- **`tools.ts`** — the admin tool set, reusing the app's own data layer.
-- **`useWebMcpTools.ts`** — registers tools only while an **admin** is signed in and tears
-  them down via `AbortController` on logout/role change (employees never get write tools).
+- **`tools.ts`** — the admin roster/leave tool set, reusing the app's own data layer.
+- **`canvas.ts` + `useCanvas.ts` + `CanvasBridge.tsx`** — the **shared canvas**. Tool calls
+  write intents (route, highlighted rows, focused contributor, a proposed bonus plan) into an
+  external store; live components read it through `useSyncExternalStore`, so an agent's tool
+  call visibly moves the human's screen. Tools are registered above `<BrowserRouter/>` and so
+  cannot call `useNavigate` — `CanvasBridge` lives inside the router and performs the
+  navigation, then reports the settled route back so `get_page_context` stays truthful.
+- **`contributionScore.ts`** — the scoring engine. Pure, deterministic, and decomposed: every
+  tool response carries the per-row arithmetic (`type weight × impact weight`), the tie-break
+  order, and a published disclosure of what the score **cannot** see.
+- **`importContributions.ts`** — a CSV/TSV/JSON work-export parser that runs entirely in the
+  tab. The store is deliberately not persisted: closing the tab discards the file, which is
+  the correct privacy behaviour.
+- **`bonusTools.ts`** — contribution and bonus tools, split into an everyone-tier and an
+  admin-tier builder.
+- **`useWebMcpTools.ts`** — registers the role-appropriate tool set while a user is signed in
+  and tears it down via `AbortController` on logout/role change.
 - **`agentClient.ts` + `AgentPanel.tsx`** — an in-page, **bring-your-own-key** agent so the
   cooperative flow is reproducible for any judge, in any browser, with **no secret shipped
   in the frontend**. The key is sent directly from the browser to OpenAI and stored only
   locally.
 
+## The bonus feature, and what it deliberately does not claim
+
+The Bonuses page tracks what people actually did — contributions logged in-app or imported
+from a work export — and turns verified evidence into a score HR can defend line by line.
+An agent can read the board, propose a split, and draw it on HR's screen; only a person can
+record it.
+
+Two honest framings ship with it, in the UI *and* in every tool response:
+
+- The score is **auditable, not unbiased**. It can only see work that was logged and
+  human-verified, so it under-counts invisible work and anyone whose claims are sitting
+  unreviewed. Those blocked points are reported as a first-class number rather than hidden.
+- **Only `verified` rows score.** A claim is worth zero until a human accepts the evidence,
+  which keeps the scoreboard from becoming a self-service leaderboard.
+
 ## Security model
 
-- **Admin-gated tools.** Write tools are registered only for the admin role and unregistered
-  on logout via `AbortController`.
+- **Role-scoped tools.** Write, verification and bonus tools are registered only for the
+  admin role and unregistered on logout via `AbortController`.
 - **Human approval on every write.** Nothing mutates without an explicit Confirm.
+- **The money tool cannot invent a number.** `record_bonus_decision` takes no amounts; it
+  commits the proposal already rendered on the human's screen.
+- **The imported file never leaves the browser.** It is parsed in-tab and held in memory only.
 - **No secrets in the frontend.** The in-page agent is bring-your-own-key; the native path
   uses the browser's own agent, so no API key ships in our bundle.
 - **RLS-backed data.** Only the public `anon` key reaches the browser (Vite `VITE_` vars);
@@ -89,29 +150,40 @@ Key pieces (all under `src/lib/webmcp/` and `src/components/`):
 
 ## Mapping to the judging criteria
 
-- **Innovation** — WebMCP tools mounted on a *real, live* app rather than a toy, with a
-  dual surface (native `document.modelContext` + an in-page mirror) so the same tools work
-  whether or not the browser has shipped WebMCP yet.
-- **Execution** — Agent and human share one code path; realtime cache invalidation means
-  agent actions are instantly visible; tools are typed with JSON-Schema inputs and defensive
-  error handling; lifecycle is cleanly tied to auth via `AbortController`.
-- **Creativity** — The "agent drafts, human commits" approval dialog turns an LLM into a
-  safe co-pilot for HR operations, not an unsupervised actor.
-- **Potential impact** — HR admins spend hours on roster edits and leave triage; a
-  cooperative agent that proposes changes and waits for one click is directly deployable and
-  generalizes to any CRUD-style internal tool.
+- **WebMCP leverage** — the tool set is built around capabilities that are *only* possible
+  in-page: reading live React state, reading a file that was never uploaded, actuating the
+  human's own UI, and committing only what is currently displayed. Dual surface (native
+  `document.modelContext` + an in-page mirror) means the same tools work whether or not the
+  browser has shipped WebMCP yet.
+- **Execution** — agent and human share one code path; realtime cache invalidation makes agent
+  actions instantly visible in every tab; tools are typed with JSON-Schema inputs, return
+  decomposed arithmetic rather than bare numbers, and handle errors defensively; lifecycle is
+  cleanly tied to auth via `AbortController`.
+- **Potential impact** — roster edits, leave triage, and bonus/award decisions are hours of
+  real HR work a week. The pattern generalises to any internal tool where a human must stay
+  accountable for the outcome: the agent does the reading, arithmetic and drafting; the human
+  keeps the decision.
+- **Creativity & ambition** — "agent drafts on your screen, human commits" applied to the
+  hardest case, money. Plus a scoring model that publishes its own limitations instead of
+  hiding behind an algorithm.
 
 ## Try it
 
 1. Open the live app and sign in as **admin** (`admin@dayflow.com` / `admin123`).
-2. **Native path:** open the app in an agent-capable browser (ChatGPT in-app browser) and
-   ask it to, e.g., *"Add Priya Sharma (EMP007) to Engineering as a Backend Developer"* or
-   *"Approve the pending leave for EMP002."* Confirm in the dialog that appears.
+2. **Native path:** open the app in an agent-capable browser (Chrome with
+   `chrome://flags/#enable-webmcp-testing`, or the ChatGPT in-app browser). Registration is
+   visible in DevTools → Application → WebMCP. Ask it to, e.g., *"Add Priya Sharma to
+   Engineering as a Backend Developer"*, *"Should I approve EMP002's leave?"*, or
+   *"Split a ₹200,000 bonus pool across the last quarter's verified contributions."*
+   Confirm in the dialog that appears.
 3. **Any browser:** click the floating bot button (bottom-right), paste an OpenAI API key in
-   Settings, and ask the same things. Watch the approval dialog gate each write and the UI
-   update live.
+   Settings, and ask the same things. Watch the agent navigate your screen, draw its proposal,
+   and stop at the approval dialog.
+4. **The in-tab file trick:** drop a CSV or JSON work export onto the import card on the
+   Bonuses page, then ask the agent *"what's in the file I just loaded?"* — it can read it,
+   and nothing was uploaded anywhere.
 
 ## Non-goals
 
 Headless/autonomous automation. Dayflow deliberately keeps a human in the loop for every
-change — the agent accelerates the work, the admin stays in control.
+change — the agent accelerates the work, the human keeps the decision.

@@ -15,6 +15,8 @@ const TABLE_KEYS: Record<string, string[][]> = {
   employee_salaries: [["employee_salaries"]],
   company_salary_structure: [["company_structure"]],
   activities: [["activities"]],
+  contributions: [["contributions"], ["stats"]],
+  bonus_awards: [["bonus_awards"]],
 };
 
 /**

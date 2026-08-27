@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { webmcp } from "@/lib/webmcp/registry";
 import { buildAdminTools } from "@/lib/webmcp/tools";
 import { buildCanvasTools } from "@/lib/webmcp/canvasTools";
+import { buildContributionTools, buildBonusAdminTools } from "@/lib/webmcp/bonusTools";
 
 /**
  * Publishes the WebMCP tool set for the signed-in user, and tears it down (via
@@ -11,9 +12,12 @@ import { buildCanvasTools } from "@/lib/webmcp/canvasTools";
  *
  * Capability scoping is real: every signed-in user gets the browser-native
  * canvas tools (page-state reads, UI actuation, policy lookup, coverage
- * simulation), while the mutating roster/leave tools are registered ONLY for
- * admins. An employee's agent therefore literally cannot see the write tools —
- * governance enforced at the protocol surface, not just in a handler.
+ * simulation) plus the contribution tools scoped to their own record, while the
+ * mutating roster/leave tools and the whole bonus surface (verification, the
+ * in-tab import reader, bonus proposals, and the one tool that commits money)
+ * are registered ONLY for admins. An employee's agent therefore literally
+ * cannot see the write tools — governance enforced at the protocol surface, not
+ * just in a handler.
  *
  * Tools are exposed both to the browser's native `document.modelContext` and to
  * the in-page Agent panel through the shared registry. Mount one instance high
@@ -31,7 +35,8 @@ export function useWebMcpTools() {
     const controller = new AbortController();
     const tools = [
       ...buildCanvasTools({ role, employeeId }),
-      ...(role === "admin" ? buildAdminTools(qc) : []),
+      ...buildContributionTools(qc, { role, employeeId }),
+      ...(role === "admin" ? [...buildAdminTools(qc), ...buildBonusAdminTools(qc)] : []),
     ];
     webmcp.register(tools, controller.signal);
     return () => controller.abort();

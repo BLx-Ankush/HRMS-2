@@ -38,6 +38,7 @@ const ROUTES: Record<string, string> = {
   leave: "/leave",
   "time-off": "/time-off",
   payroll: "/payroll",
+  bonuses: "/bonuses",
   "salary-info": "/salary-info",
   profile: "/profile",
 };

@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabaseClient";
 import type {
   Employee, LeaveRequest, AttendanceRecord, TimeOffRequest, PayrollRecord,
   EmployeeSalary, CompanyStructure, Activity, LeaveStatus,
+  Contribution, ContributionStatus, ContributionType, ContributionSource, BonusAward,
 } from "@/types/db";
 
 // ---------- row -> app type mappers ----------
@@ -46,6 +47,17 @@ const toCompanyStructure = (r: any): CompanyStructure => ({
     employer: { amount: Number(r.pf_employer_amount), percentage: r.pf_employer_pct ?? "" },
   },
   taxDeductions: { professionalTax: Number(r.professional_tax) },
+});
+const toContribution = (r: any): Contribution => ({
+  id: r.id, employeeId: r.employee_id, employeeName: r.employee_name, department: r.department ?? "",
+  title: r.title, detail: r.detail ?? "", type: r.type, impact: r.impact,
+  occurredOn: r.occurred_on, link: r.link ?? "", status: r.status,
+  verifiedBy: r.verified_by ?? "", verifiedAt: r.verified_at ?? undefined, source: r.source ?? "self",
+});
+const toBonusAward = (r: any): BonusAward => ({
+  id: r.id, employeeId: r.employee_id, employeeName: r.employee_name, period: r.period,
+  amount: Number(r.amount), score: Number(r.score), rank: r.rank ?? undefined,
+  kind: r.kind, reason: r.reason ?? "", decidedBy: r.decided_by ?? "", createdAt: r.created_at,
 });
 
 async function logActivity(type: string, actorName: string, action: string) {
@@ -436,6 +448,156 @@ export function useEmployeeStats(employeeId?: string) {
         pendingRequests,
         nextPayday: (pay.data ?? [])[0]?.month ?? currentMonthLabel(),
       };
+    },
+  });
+}
+
+// ---------- Contributions (bonus evidence) ----------
+// Read is intentionally open to every signed-in user: the basis for a bonus is
+// not a secret. Verification is admin-only, enforced by RLS as well as the UI.
+export function useContributions() {
+  return useQuery({
+    queryKey: ["contributions"],
+    queryFn: async (): Promise<Contribution[]> => {
+      const { data, error } = await supabase
+        .from("contributions").select("*").order("occurred_on", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(toContribution);
+    },
+  });
+}
+
+export interface NewContributionInput {
+  profileId?: string | null;
+  employeeId: string;
+  employeeName: string;
+  department?: string;
+  title: string;
+  detail?: string;
+  type: ContributionType;
+  impact: "low" | "medium" | "high";
+  occurredOn: string;
+  link?: string;
+  source?: ContributionSource;
+  /** HR-entered rows may be verified on the way in; self-logged rows never are. */
+  status?: ContributionStatus;
+  verifiedBy?: string;
+}
+
+/** Insert one or many contribution rows. Import approval uses the array form. */
+export function useLogContributions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: NewContributionInput | NewContributionInput[]) => {
+      const list = Array.isArray(input) ? input : [input];
+      if (!list.length) return 0;
+      const rows = list.map((i) => ({
+        profile_id: i.profileId ?? null,
+        employee_id: i.employeeId, employee_name: i.employeeName,
+        department: i.department ?? "", title: i.title, detail: i.detail ?? "",
+        type: i.type, impact: i.impact, occurred_on: i.occurredOn, link: i.link ?? "",
+        status: i.status ?? "claimed",
+        verified_by: i.status === "verified" ? (i.verifiedBy ?? "") : "",
+        verified_at: i.status === "verified" ? new Date().toISOString() : null,
+        source: i.source ?? "self",
+      }));
+      const { error } = await supabase.from("contributions").insert(rows);
+      if (error) throw error;
+      await logActivity(
+        "contribution",
+        list.length === 1 ? list[0].employeeName : "HR",
+        list.length === 1 ? "logged a contribution" : `imported ${list.length} contributions`
+      );
+      return rows.length;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contributions"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
+      qc.invalidateQueries({ queryKey: ["stats"] });
+    },
+  });
+}
+
+/** HR verifies or rejects a claim. This is the step that makes points count. */
+export function useVerifyContribution() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      { id, status, verifiedBy }: { id: string; status: ContributionStatus; verifiedBy: string }
+    ) => {
+      const { error } = await supabase.from("contributions").update({
+        status,
+        verified_by: verifiedBy,
+        verified_at: status === "claimed" ? null : new Date().toISOString(),
+      }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["contributions"] });
+      qc.invalidateQueries({ queryKey: ["stats"] });
+    },
+  });
+}
+
+// ---------- Bonus awards (the recorded human decision) ----------
+export function useBonusAwards() {
+  return useQuery({
+    queryKey: ["bonus_awards"],
+    queryFn: async (): Promise<BonusAward[]> => {
+      const { data, error } = await supabase
+        .from("bonus_awards").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(toBonusAward);
+    },
+  });
+}
+
+export interface NewBonusAwardInput {
+  profileId?: string | null;
+  employeeId: string; employeeName: string; period: string;
+  amount: number; score: number; rank?: number;
+  kind: "bonus" | "award"; reason: string; decidedBy: string;
+}
+
+/**
+ * Record a bonus/award decision. Upserts on (employee_id, period, kind) so
+ * re-running an allocation for the same window corrects the earlier figure
+ * instead of stacking a second payment on top of it.
+ */
+export function useSaveBonusAwards() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: NewBonusAwardInput | NewBonusAwardInput[]) => {
+      const list = Array.isArray(input) ? input : [input];
+      if (!list.length) return 0;
+      // Fill in the profile UUID for any caller that only knows the employee ID.
+      // Without it, `bonus_read`'s owns_profile(profile_id) check hides the row
+      // from the person it was awarded to.
+      const needLookup = list.filter((i) => !i.profileId).map((i) => i.employeeId);
+      const profileByEmp = new Map<string, string>();
+      if (needLookup.length) {
+        const { data: profs } = await supabase
+          .from("profiles").select("id,employee_id").in("employee_id", needLookup);
+        (profs ?? []).forEach((p: any) => profileByEmp.set(p.employee_id, p.id));
+      }
+      const rows = list.map((i) => ({
+        profile_id: i.profileId ?? profileByEmp.get(i.employeeId) ?? null,
+        employee_id: i.employeeId, employee_name: i.employeeName, period: i.period,
+        amount: i.amount, score: i.score, rank: i.rank ?? null,
+        kind: i.kind, reason: i.reason, decided_by: i.decidedBy,
+      }));
+      const { error } = await supabase
+        .from("bonus_awards").upsert(rows, { onConflict: "employee_id,period,kind" });
+      if (error) throw error;
+      await logActivity("bonus", list[0].decidedBy || "HR",
+        list.length === 1
+          ? `recorded a ${list[0].kind} for ${list[0].employeeName}`
+          : `recorded ${list.length} ${list[0].kind === "award" ? "awards" : "bonuses"} for ${list[0].period}`);
+      return rows.length;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bonus_awards"] });
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 }

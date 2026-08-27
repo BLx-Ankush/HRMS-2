@@ -10,6 +10,11 @@ import type { McpToolDescriptor } from "./types";
 import { textResult, jsonResult } from "./registry";
 import { requireApproval } from "./approval";
 import { canvas } from "./canvas";
+import {
+  extractDepartment, extractEmail, extractEmployeeId, extractJoinDate, extractName,
+  extractPhone, extractPosition, extractSkills, extractStatus,
+  emailFromName, inferDomain, nextEmployeeId, normalizeDepartment, today,
+} from "./parseEmployee";
 
 const s = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 const invalidate = (qc: QueryClient, keys: string[][]) =>
@@ -167,6 +172,160 @@ export function buildAdminTools(qc: QueryClient): McpToolDescriptor[] {
         invalidate(qc, [["employees"], ["activities"], ["stats"]]);
         canvas.focusEmployee(employeeId); // show the human the row that just appeared
         return textResult(`Added ${name} (${employeeId}) to ${department} as ${position}.`);
+      },
+    },
+    {
+      name: "add_employee_from_description",
+      title: "Onboard from a description",
+      annotations: { destructiveHint: false },
+      description:
+        "Onboard a new employee from one free-text sentence, e.g. \"add Priya Sharma as a senior backend developer in eng, priya@dayflow.com, starting Sept 15\". Pass the admin's wording as `description` and whatever fields you recognised in it; everything you leave out is derived deterministically against the live roster — the next free employee ID, the department snapped onto one already in use, a house-style work email, and the join date. Duplicates are caught before anything is written, and the admin confirms a draft that marks which values were stated and which were inferred. Prefer this over add_employee whenever the admin describes a hire in prose instead of giving structured fields.",
+      inputSchema: obj(
+        {
+          description: str("The admin's full description of the new hire, in their own words."),
+          name: str("Full name, if you can identify it (recommended — pass this explicitly)."),
+          position: str("Job title, if identifiable, e.g. 'Senior Backend Developer'."),
+          department: str("Department as mentioned; shorthand like 'eng' is normalized."),
+          email: str("Work email, if stated. Inferred from the name when omitted."),
+          phone: str("Phone number, if stated."),
+          joinDate: str("Join date; ISO or loose forms like 'Sept 15' are parsed. Defaults to today."),
+          employeeId: str("Only if the admin named one. Otherwise the next free ID is assigned."),
+          status: strEnum("Employment status; defaults to 'active'.", STATUS_VALUES),
+          skills: { type: "array", items: { type: "string" }, description: "Skills, if mentioned." },
+        },
+        ["description"]
+      ),
+      execute: async (args) => {
+        const description = s(args.description);
+        if (!description)
+          return { ...textResult("description is required — pass the admin's wording."), isError: true };
+
+        const { data: roster, error: rosterErr } = await supabase
+          .from("profiles").select("employee_id,name,email,department");
+        if (rosterErr) throw rosterErr;
+        const rows = roster ?? [];
+        const knownDepts = Array.from(
+          new Set(rows.map((r: any) => String(r.department ?? "").trim()).filter(Boolean))
+        );
+        const domain = inferDomain(rows.map((r: any) => r.email));
+
+        // Explicit arguments always win; the description is the fallback.
+        const name = s(args.name) || extractName(description);
+        const position = s(args.position) || extractPosition(description);
+        const deptRaw = s(args.department) || extractDepartment(description, knownDepts);
+
+        const missing: string[] = [];
+        if (!name) missing.push("name");
+        if (!position) missing.push("position");
+        if (!deptRaw) missing.push("department");
+        if (missing.length)
+          return {
+            ...textResult(
+              `Couldn't determine ${missing.join(", ")} from that description. Nothing was saved — ` +
+                `ask the admin for the missing detail, or call this again passing ${missing.join(" and ")} explicitly.`
+            ),
+            isError: true,
+          };
+
+        const dept = normalizeDepartment(deptRaw, knownDepts);
+        const department = dept.value;
+
+        const statedId = s(args.employeeId).toUpperCase() || extractEmployeeId(description);
+        const employeeId = statedId || nextEmployeeId(rows.map((r: any) => r.employee_id));
+
+        const statedEmail = s(args.email) || extractEmail(description);
+        const email = statedEmail || emailFromName(name, domain);
+
+        const statedDate = s(args.joinDate) || extractJoinDate(description);
+        const joinDate = statedDate || today();
+
+        const status = STATUS_VALUES.includes(s(args.status))
+          ? s(args.status)
+          : extractStatus(description) || "active";
+        const phone = s(args.phone) || extractPhone(description);
+        const skills = Array.isArray(args.skills)
+          ? (args.skills as unknown[]).map((x) => String(x))
+          : extractSkills(description);
+
+        // Catch collisions before we ask the human to commit to anything.
+        const idTaken = rows.find(
+          (r: any) => String(r.employee_id ?? "").toUpperCase() === employeeId
+        );
+        if (idTaken)
+          return {
+            ...textResult(
+              `Employee ID ${employeeId} already belongs to ${idTaken.name}. Nothing was saved — ` +
+                `omit employeeId and I'll assign the next free one.`
+            ),
+            isError: true,
+          };
+        const emailTaken = rows.find(
+          (r: any) => String(r.email ?? "").toLowerCase() === email.toLowerCase()
+        );
+        if (emailTaken)
+          return {
+            ...textResult(
+              `${email} is already on the roster (${emailTaken.name}, ${emailTaken.employee_id}). ` +
+                `Nothing was saved — confirm this isn't a duplicate hire, then supply a different email.`
+            ),
+            isError: true,
+          };
+        const sameName = rows.find(
+          (r: any) => String(r.name ?? "").trim().toLowerCase() === name.toLowerCase()
+        );
+
+        const mark = (value: string, stated: boolean, note?: string) =>
+          stated ? value : `${value}  — ${note ?? "inferred"}`;
+
+        const details: Record<string, string> = {
+          "Employee ID": mark(employeeId, !!statedId, "next free ID"),
+          Name: name,
+          Email: mark(email, !!statedEmail, `built from name @${domain}`),
+          Department: dept.note ? `${department}  — ${dept.note}` : department,
+          Position: position,
+          Status: status,
+          "Join date": mark(joinDate, !!statedDate, "defaulted to today"),
+        };
+        if (phone) details.Phone = phone;
+        if (skills.length) details.Skills = skills.join(", ");
+        details["From"] = description;
+        if (sameName)
+          details["⚠ Possible duplicate"] =
+            `${sameName.name} (${sameName.employee_id}) is already on the roster with this name`;
+
+        const ok = await requireApproval({
+          title: "Add employee (from description)",
+          summary: `Add ${name} (${employeeId}) to ${department} as ${position}`,
+          details,
+          confirmLabel: "Add employee",
+          destructive: !!sameName,
+        });
+        if (!ok) return textResult(`Cancelled — ${name} was not added.`);
+
+        const { error } = await supabase.from("profiles").insert({
+          employee_id: employeeId, name, email, phone, department, position,
+          status, join_date: joinDate, role: "employee",
+          ...(skills.length ? { skills } : {}),
+        });
+        if (error) {
+          const dup = /duplicate|unique/i.test(error.message);
+          return {
+            ...textResult(dup ? `${employeeId} or ${email} was taken while you confirmed — try again.` : error.message),
+            isError: true,
+          };
+        }
+        await logActivity("welcome", name, "joined the team");
+        invalidate(qc, [["employees"], ["activities"], ["stats"]]);
+        canvas.focusEmployee(employeeId); // scroll the new row into view and pulse it
+
+        const derived = [
+          !statedId && "employee ID", !statedEmail && "work email",
+          !statedDate && "join date", dept.note && "department",
+        ].filter(Boolean);
+        return textResult(
+          `Added ${name} (${employeeId}) to ${department} as ${position}, starting ${joinDate}.` +
+            (derived.length ? ` Derived from the roster: ${derived.join(", ")}.` : "")
+        );
       },
     },
     {

@@ -17,6 +17,7 @@ import {
   Clock,
   Calendar,
   DollarSign,
+  Award,
   User,
   LogOut,
   Menu,
@@ -34,6 +35,7 @@ const employeeNavItems = [
   { href: "/attendance", label: "Attendance", icon: Clock },
   { href: "/leave", label: "Leave", icon: Calendar },
   { href: "/payroll", label: "Payroll", icon: DollarSign },
+  { href: "/bonuses", label: "Contributions", icon: Award },
   { href: "/profile", label: "Profile", icon: User },
 ];
 

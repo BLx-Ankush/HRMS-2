@@ -124,3 +124,52 @@ export interface Activity {
   action: string;
   time: string;
 }
+
+export type ContributionType =
+  | "delivery"
+  | "fix"
+  | "improvement"
+  | "mentoring"
+  | "documentation"
+  | "initiative"
+  | "support";
+
+export type ContributionStatus = "claimed" | "verified" | "rejected";
+
+/** How a contribution row got here: self-logged, entered by HR, or parsed
+ *  in-browser from a work-data export dropped on the Bonuses page. */
+export type ContributionSource = "self" | "hr" | "import";
+
+export interface Contribution {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  title: string;
+  detail: string;
+  type: ContributionType;
+  impact: "low" | "medium" | "high";
+  occurredOn: string;
+  /** Evidence pointer (PR, ticket, doc) — what makes a claim checkable. */
+  link: string;
+  status: ContributionStatus;
+  verifiedBy: string;
+  verifiedAt?: string;
+  source: ContributionSource;
+}
+
+export interface BonusAward {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  /** Review window the decision covers, e.g. '2026-Q3'. */
+  period: string;
+  amount: number;
+  /** Contribution score at the moment of the decision, kept for audit. */
+  score: number;
+  rank?: number;
+  kind: "bonus" | "award";
+  reason: string;
+  decidedBy: string;
+  createdAt: string;
+}

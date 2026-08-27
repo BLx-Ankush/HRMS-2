@@ -42,6 +42,31 @@ export interface CoverageSim {
   note: string;
 }
 
+/** One line of a bonus split the agent has proposed but nobody has approved. */
+export interface BonusPlanLine {
+  employeeId: string;
+  employeeName: string;
+  score: number;
+  sharePct: number;
+  amount: number;
+  reason: string;
+}
+
+/**
+ * A proposal drawn on the human's Bonuses page. It is deliberately not a
+ * decision: nothing is written to `bonus_awards` until HR presses Record.
+ */
+export interface BonusPlanCanvas {
+  kind: "pool" | "shortlist";
+  title: string;
+  pool: number;
+  method: string;
+  window: string;
+  lines: BonusPlanLine[];
+  excluded: { employeeName: string; why: string }[];
+  note: string;
+}
+
 export interface CanvasState {
   /** Route the agent asked us to open; cleared once the router honors it. */
   pendingRoute: string | null;
@@ -55,6 +80,12 @@ export interface CanvasState {
   highlightLeaveIds: string[];
   /** Rendered coverage simulation banner, if any. */
   coverage: CoverageSim | null;
+  /** Contributor row on the Bonuses board to scroll to and pulse. */
+  focusContributorId: string | null;
+  /** Contribution evidence rows to highlight. */
+  highlightContributionIds: string[];
+  /** Proposed bonus split / award shortlist rendered on the Bonuses page. */
+  bonusPlan: BonusPlanCanvas | null;
   /** Bumped on every agent action so components can re-run animations. */
   pulse: number;
   /** What the visible page is currently showing (published by pages). */
@@ -70,6 +101,9 @@ const INITIAL: CanvasState = {
   directory: EMPTY_FILTER,
   highlightLeaveIds: [],
   coverage: null,
+  focusContributorId: null,
+  highlightContributionIds: [],
+  bonusPlan: null,
   pulse: 0,
   pageContext: {},
 };
@@ -139,6 +173,31 @@ class CanvasStore {
     this.set({ pendingRoute: "/leave", highlightLeaveIds: ids });
   }
 
+  // ---------------- bonuses / contribution canvas ----------------
+
+  /** Scroll to + pulse one contributor on the Bonuses board. */
+  focusContributor(employeeId: string) {
+    this.set({ pendingRoute: "/bonuses", focusContributorId: employeeId });
+  }
+
+  /** Highlight specific evidence rows — e.g. the claims HR still has to check. */
+  flagContributions(ids: string[]) {
+    this.set({ pendingRoute: "/bonuses", highlightContributionIds: ids });
+  }
+
+  /** Draw a proposed split or shortlist on the page. Still requires approval. */
+  showBonusPlan(plan: BonusPlanCanvas) {
+    this.set({
+      pendingRoute: "/bonuses",
+      bonusPlan: plan,
+      focusContributorId: plan.lines[0]?.employeeId ?? null,
+    });
+  }
+
+  clearBonusPlan() {
+    this.set({ bonusPlan: null, focusContributorId: null, highlightContributionIds: [] }, false);
+  }
+
   // ---------------- app-facing plumbing ----------------
 
   /** Called by the router bridge once a pending navigation is honored. */
@@ -164,6 +223,17 @@ class CanvasStore {
             employee: s.coverage.employeeName,
             window: `${s.coverage.startDate} → ${s.coverage.endDate}`,
             risk: s.coverage.risk,
+          }
+        : null,
+      focusedContributorId: s.focusContributorId,
+      highlightedContributionCount: s.highlightContributionIds.length,
+      bonusPlanOnScreen: s.bonusPlan
+        ? {
+            kind: s.bonusPlan.kind,
+            pool: s.bonusPlan.pool,
+            window: s.bonusPlan.window,
+            people: s.bonusPlan.lines.length,
+            approved: false,
           }
         : null,
     };
