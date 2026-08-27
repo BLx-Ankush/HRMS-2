@@ -5,6 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { RealtimeSync } from "@/hooks/useRealtimeSync";
+import { WebMcpTools } from "@/hooks/useWebMcpTools";
+import { AgentApprovalDialog } from "@/components/AgentApprovalDialog";
+import { AgentPanel } from "@/components/AgentPanel";
 import Index from "./pages/Index";
 import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
@@ -27,6 +30,9 @@ const App = () => (
         <Toaster />
         <Sonner />
         <RealtimeSync />
+        <WebMcpTools />
+        <AgentApprovalDialog />
+        <AgentPanel />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />

@@ -132,7 +132,7 @@ Payroll, Salary Structure, Profile) reads and writes through React Query hooks i
 ### Deployment
 The application is deployed and live on **Vercel** for easy access and testing.
 
-**🔗 Live URL:** [https://hrms-one-phi.vercel.app/](https://hrms-one-phi.vercel.app/)
+**🔗 Live URL:** [https://hrms-2-virid.vercel.app/](https://hrms-2-virid.vercel.app/)
 
 ### Demo Accounts
 We've created demo accounts for you to explore all features without setting up your own data:
@@ -162,6 +162,18 @@ This project is under active development! Upcoming features and improvements inc
 
 *Stay tuned for exciting updates and new features!*
 
+
+## 🤖 WebMCP Agent (Cooperative Human + AI)
+
+This app is also a **WebMCP Challenge** entry. The admin's core workflows —
+adding/updating employees and approving/rejecting leave — are exposed as WebMCP
+tools on `document.modelContext`, so a browser-native AI agent can operate the
+*real* application. Every change pauses on a human-approval dialog: **the agent
+drafts, the human commits.** There's also an in-page, bring-your-own-key agent so
+the flow is reproducible in any browser with no secret shipped in the frontend.
+
+See **[WEBMCP.md](./WEBMCP.md)** for the architecture, tool list, security model,
+and a step-by-step demo script.
 
 ## 🎯 Usage
 
