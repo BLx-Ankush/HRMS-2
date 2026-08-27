@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabaseClient";
 import type { McpToolDescriptor } from "./types";
 import { textResult, jsonResult } from "./registry";
 import { requireApproval } from "./approval";
+import { canvas } from "./canvas";
 
 const s = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 const invalidate = (qc: QueryClient, keys: string[][]) =>
@@ -164,6 +165,7 @@ export function buildAdminTools(qc: QueryClient): McpToolDescriptor[] {
         }
         await logActivity("welcome", name, "joined the team");
         invalidate(qc, [["employees"], ["activities"], ["stats"]]);
+        canvas.focusEmployee(employeeId); // show the human the row that just appeared
         return textResult(`Added ${name} (${employeeId}) to ${department} as ${position}.`);
       },
     },
@@ -218,6 +220,7 @@ export function buildAdminTools(qc: QueryClient): McpToolDescriptor[] {
         if (!data || data.length === 0)
           return { ...textResult(`No employee found with ID ${employeeId}.`), isError: true };
         invalidate(qc, [["employees"], ["stats"]]);
+        canvas.focusEmployee(employeeId); // scroll + pulse the row we just changed
         return textResult(`Updated ${employeeId}: ${Object.keys(shown).join(", ")}.`);
       },
     },
@@ -246,6 +249,9 @@ export function buildAdminTools(qc: QueryClient): McpToolDescriptor[] {
         if (!req) return { ...textResult(`No leave request found with id ${requestId}.`), isError: true };
 
         const status = decision === "approve" ? "approved" : "rejected";
+        // Put the human on the leave screen with THIS row highlighted before we
+        // ask them to commit, so they approve something they can actually see.
+        canvas.flagLeaveRequests([requestId]);
         const ok = await requireApproval({
           title: `${decision === "approve" ? "Approve" : "Reject"} leave`,
           summary: `${decision === "approve" ? "Approve" : "Reject"} ${req.employee_name}'s ${req.type}`,

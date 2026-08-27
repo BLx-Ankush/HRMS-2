@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar, Plus, Check, X, Clock } from "lucide-react";
 import { useLeaveRequests, useSubmitLeave, useDecideLeave, useEmployeeStats } from "@/hooks/hrms";
+import { CoveragePanel } from "@/components/CoveragePanel";
+import { useCanvas } from "@/hooks/useCanvas";
+import { canvas } from "@/lib/webmcp/canvas";
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   pending: { label: "Pending", className: "bg-warning/10 text-warning border-warning/20" },
@@ -46,6 +49,25 @@ export default function Leave() {
     .reduce((s, r) => s + r.days, 0);
   const paidBalance = estats?.leaveBalance ?? 0;
   const sickBalance = Math.max(0, SICK_QUOTA - usedSick);
+
+  // Shared canvas: rows the agent's coverage simulation flagged as clashes.
+  const { highlightLeaveIds } = useCanvas();
+  const flagged = new Set(highlightLeaveIds);
+
+  // Publish what is on screen so `get_page_context` can report it truthfully.
+  const pendingKey = pendingRequests.map((r) => r.id).join(",");
+  useEffect(() => {
+    canvas.publishContext({
+      screen: isAdmin ? "leave-approvals" : "my-leave",
+      pendingCount: pendingRequests.length,
+      totalRequests: leaveRequests.length,
+      pendingRequests: pendingRequests.map((r) => ({
+        requestId: r.id, employeeId: r.employeeId, employeeName: r.employeeName,
+        type: r.type, startDate: r.startDate, endDate: r.endDate, days: r.days,
+      })),
+      flaggedRequestIds: highlightLeaveIds,
+    });
+  }, [pendingKey, leaveRequests.length, isAdmin, highlightLeaveIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmitRequest = () => {
     if (!newRequest.type || !newRequest.startDate || !newRequest.endDate || !newRequest.reason) {
@@ -105,6 +127,9 @@ export default function Leave() {
   return (
     <DashboardLayout title={isAdmin ? "Leave Approvals" : "Leave Requests"}>
       <div className="space-y-6">
+        {/* Agent-rendered coverage simulation (appears when a tool runs) */}
+        <CoveragePanel />
+
         {/* Leave Balance (for employees) */}
         {!isAdmin && (
           <div className="grid gap-4 md:grid-cols-3">
@@ -254,7 +279,10 @@ export default function Leave() {
                           </TableRow>
                         ) : (
                           pendingRequests.map((request) => (
-                            <TableRow key={request.id}>
+                            <TableRow
+                              key={request.id}
+                              className={flagged.has(request.id) ? "agent-flag bg-warning/5" : undefined}
+                            >
                               <TableCell>
                                 <div>
                                   <p className="font-medium">{request.employeeName}</p>
@@ -312,7 +340,10 @@ export default function Leave() {
                       </TableHeader>
                       <TableBody>
                         {leaveRequests.map((request) => (
-                          <TableRow key={request.id}>
+                          <TableRow
+                            key={request.id}
+                            className={flagged.has(request.id) ? "agent-flag bg-warning/5" : undefined}
+                          >
                             <TableCell>
                               <div>
                                 <p className="font-medium">{request.employeeName}</p>

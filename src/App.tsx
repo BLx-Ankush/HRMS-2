@@ -9,6 +9,7 @@ import { WebMcpTools } from "@/hooks/useWebMcpTools";
 import { AgentApprovalDialog } from "@/components/AgentApprovalDialog";
 import { AgentPanel } from "@/components/AgentPanel";
 import { WebMcpStatusBadge } from "@/components/WebMcpStatusBadge";
+import { CanvasBridge } from "@/components/CanvasBridge";
 import Index from "./pages/Index";
 import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
@@ -36,6 +37,7 @@ const App = () => (
         <AgentPanel />
         <WebMcpStatusBadge />
         <BrowserRouter>
+          <CanvasBridge />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/signin" element={<SignIn />} />

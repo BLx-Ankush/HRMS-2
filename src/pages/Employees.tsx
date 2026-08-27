@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Search, Plus, Mail, Phone, Building, Eye } from "lucide-react";
+import { Users, Search, Plus, Mail, Phone, Building, Eye, Sparkles } from "lucide-react";
 import { useEmployees, useAddEmployee } from "@/hooks/hrms";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { useCanvas } from "@/hooks/useCanvas";
+import { canvas } from "@/lib/webmcp/canvas";
 import type { Employee } from "@/types/db";
 
 const emptyForm = {
@@ -32,6 +34,8 @@ export default function Employees() {
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const { data: employees = [], isLoading } = useEmployees();
+  const { directory, focusEmployeeId, pulse } = useCanvas();
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
   const { user } = useAuth();
   const { toast } = useToast();
   const addEmployee = useAddEmployee();
@@ -78,13 +82,53 @@ export default function Employees() {
     );
   };
 
-  const filteredEmployees = employees.filter(
-    (emp) =>
-      emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.id.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredEmployees = employees.filter((emp) => {
+    const q = searchQuery.toLowerCase();
+    const matchesQuery =
+      !q ||
+      emp.name.toLowerCase().includes(q) ||
+      emp.email.toLowerCase().includes(q) ||
+      emp.department.toLowerCase().includes(q) ||
+      emp.id.toLowerCase().includes(q);
+    const matchesDept =
+      !directory.department || emp.department.toLowerCase() === directory.department.toLowerCase();
+    const matchesStatus = !directory.status || emp.status === directory.status;
+    return matchesQuery && matchesDept && matchesStatus;
+  });
+
+  // --- Shared canvas: let agent tool calls drive this visible table ---
+  // The agent's filter_directory / focus_employee tools write to the canvas
+  // store; we mirror that into the real search box and scroll the row into
+  // view, so the human watches their own screen change.
+  const filterKey = `${directory.query}|${directory.department}|${directory.status}`;
+  useEffect(() => {
+    setSearchQuery(directory.query);
+  }, [filterKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const visibleIds = filteredEmployees.map((e) => e.id).join(",");
+  useEffect(() => {
+    if (!focusEmployeeId) return;
+    const el = rowRefs.current[focusEmployeeId];
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusEmployeeId, pulse, visibleIds]);
+
+  const departments = [...new Set(employees.map((e) => e.department))];
+  const activeCount = employees.filter((e) => e.status === "active").length;
+  const onLeaveCount = employees.filter((e) => e.status === "on_leave").length;
+
+  // Publish what is actually on screen so `get_page_context` can report it.
+  useEffect(() => {
+    canvas.publishContext({
+      screen: "employees",
+      totalEmployees: employees.length,
+      visibleRowCount: filteredEmployees.length,
+      visibleEmployees: filteredEmployees.slice(0, 25).map((e) => ({
+        employeeId: e.id, name: e.name, department: e.department, status: e.status,
+      })),
+      searchBoxText: searchQuery,
+      stats: { active: activeCount, onLeave: onLeaveCount, departments: departments.length },
+    });
+  }, [visibleIds, employees.length, searchQuery, activeCount, onLeaveCount, departments.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getInitials = (name: string) => {
     return name
@@ -93,10 +137,6 @@ export default function Employees() {
       .join("")
       .toUpperCase();
   };
-
-  const departments = [...new Set(employees.map((e) => e.department))];
-  const activeCount = employees.filter((e) => e.status === "active").length;
-  const onLeaveCount = employees.filter((e) => e.status === "on_leave").length;
 
   return (
     <DashboardLayout title="Employees">
@@ -220,6 +260,31 @@ export default function Employees() {
             )}
           </CardHeader>
           <CardContent>
+            {/* Agent-applied view state — makes it obvious the agent changed this screen */}
+            {(directory.department || directory.status || focusEmployeeId) && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                <span className="font-medium text-primary">Agent view</span>
+                {focusEmployeeId && (
+                  <Badge variant="outline" className="text-[10px]">focused {focusEmployeeId}</Badge>
+                )}
+                {directory.department && (
+                  <Badge variant="outline" className="text-[10px]">dept: {directory.department}</Badge>
+                )}
+                {directory.status && (
+                  <Badge variant="outline" className="text-[10px]">status: {directory.status}</Badge>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-6 px-2 text-[11px]"
+                  onClick={() => canvas.filterDirectory({})}
+                >
+                  Clear
+                </Button>
+              </div>
+            )}
+
             {/* Search */}
             <div className="mb-4 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -257,7 +322,15 @@ export default function Employees() {
                     </TableRow>
                   ) : (
                     filteredEmployees.map((employee) => (
-                      <TableRow key={employee.id}>
+                      <TableRow
+                        key={employee.id}
+                        ref={(el) => { rowRefs.current[employee.id] = el; }}
+                        className={
+                          focusEmployeeId === employee.id
+                            ? "agent-focus bg-primary/5"
+                            : undefined
+                        }
+                      >
                         <TableCell>
                           <div className="flex items-center gap-3">
                             <Avatar className="h-8 w-8">
