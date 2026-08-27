@@ -50,6 +50,8 @@ function detectSurface(): { mc: ModelContext; surface: "document" | "navigator" 
 class WebMcpRegistry {
   private tools = new Map<string, McpToolDescriptor>();
   private listeners = new Set<Listener>();
+  private watchTimer: ReturnType<typeof setInterval> | null = null;
+  private lastSignal?: AbortSignal;
   private status: WebMcpStatus = {
     nativeAvailable: false, surface: null, method: null,
     toolCount: 0, nativeToolCount: 0, lastError: null,
@@ -59,18 +61,45 @@ class WebMcpRegistry {
    *  optional AbortSignal so callers can tie tool lifetime to auth state. */
   register(descriptors: McpToolDescriptor[], signal?: AbortSignal): () => void {
     descriptors.forEach((d) => this.tools.set(d.name, d));
+    this.lastSignal = signal;
     this.publishNative(signal);
     this.status.toolCount = this.tools.size;
+    // ChatGPT's in-app browser (and origin-trial agents) inject the surface
+    // when their agent ATTACHES to the page — which is typically after this
+    // React app has mounted and registered once. So if the surface isn't here
+    // yet, keep watching and (re)publish the moment it appears.
+    if (!this.status.nativeAvailable) this.startNativeWatch();
     this.emit();
 
     const unregister = () => {
       descriptors.forEach((d) => this.tools.delete(d.name));
       this.status.toolCount = this.tools.size;
       this.status.nativeToolCount = 0;
+      if (this.tools.size === 0) this.stopNativeWatch();
       this.emit();
     };
     if (signal) signal.addEventListener("abort", unregister, { once: true });
     return unregister;
+  }
+
+  /** Poll for a late-injected native surface; re-publish and stop once found. */
+  private startNativeWatch() {
+    if (this.watchTimer || typeof window === "undefined") return;
+    this.watchTimer = setInterval(() => {
+      if (this.lastSignal?.aborted) { this.stopNativeWatch(); return; }
+      if (detectSurface()) {
+        this.publishNative(this.lastSignal);
+        this.stopNativeWatch();
+        this.emit();
+      }
+    }, 1000);
+  }
+
+  private stopNativeWatch() {
+    if (this.watchTimer) {
+      clearInterval(this.watchTimer);
+      this.watchTimer = null;
+    }
   }
 
   /** Hand the current tool set to the browser, whatever shape it accepts. */

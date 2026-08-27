@@ -134,18 +134,41 @@ export function AgentPanel() {
                 or "Approve the pending leave for EMP002".
               </div>
             )}
-            {messages.filter((m) => m.role === "user" || (m.role === "assistant" && m.content)).map((m, i) => (
-              <div
-                key={i}
-                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
-                  m.role === "user"
-                    ? "self-end bg-primary text-primary-foreground"
-                    : "self-start border bg-card"
-                }`}
-              >
-                {m.content}
-              </div>
-            ))}
+            {messages
+              .filter((m) => m.role === "user" || m.role === "tool" || (m.role === "assistant" && m.content))
+              .map((m, i) =>
+                m.role === "tool" ? (
+                  // Tool-call tape: shows exactly which tool ran and what it
+                  // returned, so an empty answer can be told apart from a tool
+                  // that was never called or that errored.
+                  <details
+                    key={i}
+                    className={`self-start w-full rounded-md border px-3 py-2 text-xs ${
+                      /failed:|isError/i.test(m.content)
+                        ? "border-destructive/40 bg-destructive/5"
+                        : "bg-muted/40"
+                    }`}
+                  >
+                    <summary className="cursor-pointer font-mono font-medium">
+                      ⚙ {m.name} {/failed:/i.test(m.content) ? "— error" : "— ok"}
+                    </summary>
+                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+                      {m.content}
+                    </pre>
+                  </details>
+                ) : (
+                  <div
+                    key={i}
+                    className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                      m.role === "user"
+                        ? "self-end bg-primary text-primary-foreground"
+                        : "self-start border bg-card"
+                    }`}
+                  >
+                    {m.content}
+                  </div>
+                )
+              )}
             {busy && (
               <div className="flex items-center gap-2 self-start text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" /> Thinking…
