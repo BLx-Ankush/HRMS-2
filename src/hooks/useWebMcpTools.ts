@@ -6,6 +6,7 @@ import { buildAdminTools } from "@/lib/webmcp/tools";
 import { buildCanvasTools } from "@/lib/webmcp/canvasTools";
 import { buildContributionTools, buildBonusAdminTools } from "@/lib/webmcp/bonusTools";
 import { buildSalaryAdminTools } from "@/lib/webmcp/salaryTools";
+import { buildExpenseAdminTools } from "@/lib/webmcp/expenseTools";
 
 /**
  * Publishes the WebMCP tool set for the signed-in user, and tears it down (via
@@ -15,9 +16,10 @@ import { buildSalaryAdminTools } from "@/lib/webmcp/salaryTools";
  * canvas tools (page-state reads, UI actuation, policy lookup, coverage
  * simulation) plus the contribution tools scoped to their own record, while the
  * mutating roster/leave tools, the whole bonus surface (verification, the in-tab
- * import reader, bonus proposals, and the one tool that commits money) and the
- * salary tools (which set what people are paid) are registered ONLY for admins.
- * An employee's agent therefore literally cannot see the write tools —
+ * import reader, bonus proposals, and the one tool that commits money), the
+ * salary tools (which set what people are paid) and the expense tools (which
+ * audit a claim that exists only inside this tab) are registered ONLY for
+ * admins. An employee's agent therefore literally cannot see the write tools —
  * governance enforced at the protocol surface, not just in a handler.
  *
  * Tools are exposed both to the browser's native `document.modelContext` and to
@@ -38,7 +40,12 @@ export function useWebMcpTools() {
       ...buildCanvasTools({ role, employeeId }),
       ...buildContributionTools(qc, { role, employeeId }),
       ...(role === "admin"
-        ? [...buildAdminTools(qc), ...buildBonusAdminTools(qc), ...buildSalaryAdminTools(qc)]
+        ? [
+            ...buildAdminTools(qc),
+            ...buildBonusAdminTools(qc),
+            ...buildSalaryAdminTools(qc),
+            ...buildExpenseAdminTools(qc),
+          ]
         : []),
     ];
     webmcp.register(tools, controller.signal);

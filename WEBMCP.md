@@ -26,9 +26,9 @@ bot acting on its own.
 
 ## What the agent can do
 
-**28 tools**, scoped by role: every signed-in user gets the page-state and own-record tools;
-the roster, leave, verification, bonus and salary tools are registered **only** for admins, so
-an employee's agent cannot even see them.
+**31 tools**, scoped by role: every signed-in user gets the page-state and own-record tools;
+the roster, leave, verification, bonus, salary and expense tools are registered **only** for
+admins, so an employee's agent cannot even see them.
 
 ### Tools a server-side API could not provide
 
@@ -44,6 +44,9 @@ or writes state that exists **only inside the human's live tab**:
 | `record_bonus_decision` | Takes **no amounts as arguments** — it commits the proposal held in live page state, so an agent cannot pay out a figure the human never saw |
 | `propose_salary_structure` | Derives a full component breakdown from a target CTC or a raise and **draws it on the Salary Structure page**, each line beside its current value and the arithmetic that produced it |
 | `commit_salary_structure` | Also takes **no amounts** — it writes the breakdown rendered in live page state, so the figure that reaches payroll is always the figure a human read on screen |
+| `read_expense_import` | Reads the travel claim loaded on the Expenses page — a finance export *or* the text of an actual restaurant bill. Parsed in the tab: no URL, no object store, no OCR service, so no copy of somebody's personal spend exists for a server to read |
+| `audit_expense_claim` | Applies Finance Policy §7 to that in-tab claim line by line and **marks it up on HR's screen**: the daily meal cap per traveller, alcohol removed even when itemised inside a food bill, tips capped at 10% of that day's pre-tax food, itemisation required above ₹5,000, and conference spend *held* until a real approved travel request is found — each removed rupee carrying the rule and the arithmetic |
+| `record_expense_decision` | Takes **no amounts either** — it commits the audited claim held in page state, then discards the parsed bill from the tab with the decision |
 
 ### Read tools
 
@@ -55,6 +58,9 @@ or writes state that exists **only inside the human's live tab**:
 - `get_contribution_scores` — ranked contribution board with the arithmetic behind every
   point, plus points blocked behind unverified claims
 - `get_my_contributions` — an employee's own score, rank, evidence and what HR still owes them
+- `read_expense_import` — what the tab understood from the dropped export or pasted bill: the
+  lines found, the ones skipped as totals or card details, whether it is itemised at all, and
+  who in the file matches nobody on the roster
 
 ### Write tools (each gated by in-page human approval)
 
@@ -70,6 +76,10 @@ or writes state that exists **only inside the human's live tab**:
 - `propose_salary_structure` — derive a full breakdown from intent alone ("18 lakh", "12%") and
   draw it, unsaved, on HR's Salary Structure page; the agent may not pass component amounts
 - `commit_salary_structure` — saves the breakdown on screen, nothing else
+- `audit_expense_claim` — audit the in-tab travel claim against Finance Policy §7 and draw the
+  marked-up result, unrecorded, on HR's Expenses page
+- `record_expense_decision` — record the reimbursement decision displayed on screen; takes no
+  rupee figure, and clears the parsed bill from the tab
 - `record_bonus_decision` — the only tool that commits money
 
 Because the tools call the **exact same Supabase logic the UI hooks use**
@@ -125,6 +135,15 @@ Key pieces (all under `src/lib/webmcp/` and `src/components/`):
   the company's own configured rates, each line carrying the arithmetic that produced it.
   `propose_salary_structure` draws the result unsaved beside the current figures;
   `commit_salary_structure` accepts no amounts and writes only what is on screen.
+- **`expenseAudit.ts` + `importExpenses.ts` + `expenseTools.ts` + the two Expenses panels** —
+  the travel-claim path, and the hardest place to argue for a server. A finance export or the
+  raw text of a bill is read with `FileReader` (or pasted straight in) and parsed in the tab;
+  the audit engine is pure and quotes `policies.ts` verbatim, categorising alcohol and tips
+  *before* food so an itemised beer cannot hide inside a meal total. Caps are spent in claimed
+  order, conference spend is **held** rather than approved on a fact the audit does not hold,
+  and every line carries the rule plus the arithmetic. The page's own Audit button runs the
+  same engine on the same live leave data as the tool, so the human path and the agent path
+  cannot reach different verdicts.
 - **`useWebMcpTools.ts`** — registers the role-appropriate tool set while a user is signed in
   and tears it down via `AbortController` on logout/role change.
 - **`agentClient.ts` + `AgentPanel.tsx`** — an in-page, **bring-your-own-key** agent so the
@@ -149,13 +168,16 @@ Two honest framings ship with it, in the UI *and* in every tool response:
 
 ## Security model
 
-- **Role-scoped tools.** Write, verification, bonus and salary tools are registered only for the
-  admin role and unregistered on logout via `AbortController`.
+- **Role-scoped tools.** Write, verification, bonus, salary and expense tools are registered only
+  for the admin role and unregistered on logout via `AbortController`.
 - **Human approval on every write.** Nothing mutates without an explicit Confirm.
-- **The money tools cannot invent a number.** `record_bonus_decision` and
-  `commit_salary_structure` take no amounts; each commits only what is already rendered on the
-  human's screen, and the approval dialog shows every component old against new.
+- **The money tools cannot invent a number.** `record_bonus_decision`,
+  `commit_salary_structure` and `record_expense_decision` take no amounts; each commits only what
+  is already rendered on the human's screen, and the approval dialog shows every component old
+  against new.
 - **The imported file never leaves the browser.** It is parsed in-tab and held in memory only.
+  A travel bill is discarded from the tab the moment the decision is recorded, so nobody's
+  restaurant order outlives the judgment made on it.
 - **No secrets in the frontend.** The in-page agent is bring-your-own-key; the native path
   uses the browser's own agent, so no API key ships in our bundle.
 - **RLS-backed data.** Only the public `anon` key reaches the browser (Vite `VITE_` vars);
@@ -172,13 +194,15 @@ Two honest framings ship with it, in the UI *and* in every tool response:
   actions instantly visible in every tab; tools are typed with JSON-Schema inputs, return
   decomposed arithmetic rather than bare numbers, and handle errors defensively; lifecycle is
   cleanly tied to auth via `AbortController`.
-- **Potential impact** — roster edits, leave triage, and bonus/award decisions are hours of
-  real HR work a week. The pattern generalises to any internal tool where a human must stay
-  accountable for the outcome: the agent does the reading, arithmetic and drafting; the human
-  keeps the decision.
+- **Potential impact** — roster edits, leave triage, bonus/award decisions and travel-claim
+  auditing are hours of real HR and finance work a week, and the expense audit replaces the
+  least consistent part of it: a tired human reading five rules against thirty line items. The
+  pattern generalises to any internal tool where a human must stay accountable for the outcome:
+  the agent does the reading, arithmetic and drafting; the human keeps the decision.
 - **Creativity & ambition** — "agent drafts on your screen, human commits" applied to the
-  hardest case, money. Plus a scoring model that publishes its own limitations instead of
-  hiding behind an algorithm.
+  hardest case, money — three times over, ending with a claim that exists nowhere but the tab.
+  Plus a scoring model and an audit that both publish their own limitations instead of hiding
+  behind an algorithm.
 
 ## Try it
 
@@ -199,6 +223,13 @@ Two honest framings ship with it, in the UI *and* in every tool response:
    raise"*. The breakdown appears on the Salary Structure page — every component beside its
    current value, with the arithmetic — and stays unsaved until you (or a follow-up
    *"save it"*, which routes through the approval dialog) commit exactly what is displayed.
+6. **The bill that never gets uploaded:** on the Expenses page, paste a real restaurant bill —
+   itemised, with a beer on it and a service charge — pick the traveller, and ask the agent
+   *"audit the claim I just loaded"*. It reads the claim out of the tab, applies Finance Policy
+   §7 line by line, and marks up your screen: the alcohol gone, the tip trimmed to 10% of that
+   day's pre-tax food, the meal total capped at ₹1,200 for that traveller that day, conference
+   spend held if no approved travel request exists. Then *"record it"* — the tool sends no
+   figure at all, and the parsed bill leaves the tab with the decision.
 
 ## Non-goals
 

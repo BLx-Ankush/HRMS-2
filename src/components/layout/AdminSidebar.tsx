@@ -11,6 +11,7 @@ import {
   DollarSign,
   FileText,
   Award,
+  Receipt,
   Settings,
   Bell,
 } from "lucide-react";
@@ -23,6 +24,7 @@ const mainMenuItems = [
   { href: "/time-off", label: "Time Off", icon: Palmtree },
   { href: "/payroll", label: "Payroll", icon: DollarSign },
   { href: "/bonuses", label: "Bonuses", icon: Award },
+  { href: "/expenses", label: "Expenses", icon: Receipt },
   { href: "/salary-info", label: "Salary Info", icon: FileText },
 ];
 

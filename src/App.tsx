@@ -20,6 +20,7 @@ import Leave from "./pages/Leave";
 import TimeOff from "./pages/TimeOff";
 import Payroll from "./pages/Payroll";
 import Bonuses from "./pages/Bonuses";
+import Expenses from "./pages/Expenses";
 import SalaryInfo from "./pages/SalaryInfo";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
@@ -50,6 +51,7 @@ const App = () => (
             <Route path="/time-off" element={<TimeOff />} />
             <Route path="/payroll" element={<Payroll />} />
             <Route path="/bonuses" element={<Bonuses />} />
+            <Route path="/expenses" element={<Expenses />} />
             <Route path="/salary-info" element={<SalaryInfo />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="*" element={<NotFound />} />

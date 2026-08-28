@@ -9,6 +9,8 @@
 // It is also read BACK by the `get_page_context` tool, so the agent can ask
 // "what is the human currently looking at?" — in-memory state that never
 // existed on any server and that a remote API physically cannot see.
+import type { ExpenseAudit } from "./expenseAudit";
+
 export interface DirectoryFilter {
   query: string;
   department: string;
@@ -104,6 +106,21 @@ export interface SalaryProposalCanvas {
   warnings: string[];
 }
 
+/**
+ * An expense claim audited against Finance Policy §7 and drawn on the human's
+ * Expenses page.
+ *
+ * The claim it describes was parsed inside this tab from a file or pasted bill
+ * and never uploaded, so this object is the only place the audit exists.
+ * `record_expense_decision` reads it rather than accepting a figure, which is
+ * why the reimbursable total that gets logged is the one HR read on screen.
+ */
+export interface ExpenseAuditCanvas {
+  audit: ExpenseAudit;
+  /** Line ids to highlight: everything disallowed, capped or held for review. */
+  flagged: string[];
+}
+
 export interface CanvasState {
   /** Route the agent asked us to open; cleared once the router honors it. */
   pendingRoute: string | null;
@@ -125,6 +142,8 @@ export interface CanvasState {
   bonusPlan: BonusPlanCanvas | null;
   /** Proposed salary structure rendered on the Salary Structure page. */
   salaryProposal: SalaryProposalCanvas | null;
+  /** Audited expense claim rendered on the Expenses page. */
+  expenseAudit: ExpenseAuditCanvas | null;
   /** Bumped on every agent action so components can re-run animations. */
   pulse: number;
   /** What the visible page is currently showing (published by pages). */
@@ -144,6 +163,7 @@ const INITIAL: CanvasState = {
   highlightContributionIds: [],
   bonusPlan: null,
   salaryProposal: null,
+  expenseAudit: null,
   pulse: 0,
   pageContext: {},
 };
@@ -249,6 +269,28 @@ class CanvasStore {
     this.set({ salaryProposal: null }, false);
   }
 
+  // ---------------- expense canvas ----------------
+
+  /**
+   * Draw an audited claim on the Expenses page. Writes nothing to the database:
+   * the numbers on screen are what `record_expense_decision` later commits.
+   */
+  showExpenseAudit(audit: ExpenseAudit) {
+    this.set({
+      pendingRoute: "/expenses",
+      expenseAudit: {
+        audit,
+        flagged: audit.items
+          .filter((i) => i.verdict !== "allowed")
+          .map((i) => i.id),
+      },
+    });
+  }
+
+  clearExpenseAudit() {
+    this.set({ expenseAudit: null }, false);
+  }
+
   // ---------------- app-facing plumbing ----------------
 
   /** Called by the router bridge once a pending navigation is honored. */
@@ -294,6 +336,19 @@ class CanvasStore {
             basis: s.salaryProposal.basis,
             proposedNetMonthly: s.salaryProposal.proposedNet,
             saved: false,
+          }
+        : null,
+      expenseAuditOnScreen: s.expenseAudit
+        ? {
+            source: s.expenseAudit.audit.source,
+            itemised: s.expenseAudit.audit.itemised,
+            lines: s.expenseAudit.audit.items.length,
+            claimedTotal: s.expenseAudit.audit.claimedTotal,
+            reimbursableTotal: s.expenseAudit.audit.reimbursableTotal,
+            disallowedTotal: s.expenseAudit.audit.disallowedTotal,
+            heldForReviewTotal: s.expenseAudit.audit.heldForReviewTotal,
+            breaches: s.expenseAudit.audit.breaches.length,
+            recorded: false,
           }
         : null,
     };

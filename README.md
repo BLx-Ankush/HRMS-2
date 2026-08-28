@@ -167,11 +167,14 @@ This project is under active development! Upcoming features and improvements inc
 
 This app is also a **WebMCP Challenge** entry. The admin's core workflows —
 onboarding and updating employees, deciding leave, verifying contributions,
-splitting a bonus pool and setting a salary structure — are exposed as WebMCP
+splitting a bonus pool, setting a salary structure and auditing a travel claim
+against the company's own expense policy — are exposed as WebMCP
 tools on `document.modelContext`, so a browser-native AI agent can operate the
 *real* application. Every change pauses on a human-approval dialog: **the agent
-drafts, the human commits.** The two tools that touch money take no amounts at
-all — they commit only the proposal already drawn on the human's screen. There's
+drafts, the human commits.** The three tools that touch money take no amounts at
+all — they commit only the proposal already drawn on the human's screen. The
+expense audit goes further: the bill it reasons over was parsed inside the tab
+and never uploaded, so no server-side API could perform it at all. There's
 also an in-page, bring-your-own-key agent so the flow is reproducible in any
 browser with no secret shipped in the frontend.
 
