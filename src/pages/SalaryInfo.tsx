@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Pencil, Building, Users, Save, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
+import { SalaryProposalPanel } from "@/components/SalaryProposalPanel";
+import { canvas } from "@/lib/webmcp/canvas";
+import { useCanvas } from "@/hooks/useCanvas";
 import {
   useCompanyStructure,
   useUpdateCompanyStructure,
@@ -59,6 +62,41 @@ export default function SalaryInfo() {
   const { data: companyStructure } = useCompanyStructure();
   const upsertSalary = useUpsertEmployeeSalary();
   const updateCompany = useUpdateCompanyStructure();
+
+  // An agent-drawn proposal takes over the view: switch to the employee tab and
+  // select whoever it concerns, so the panel sits directly above their real
+  // figures. Keyed on the employee id (a primitive) — putting the proposal
+  // object in the deps would loop through publishContext.
+  const { salaryProposal } = useCanvas();
+  const proposedFor = salaryProposal?.employeeId ?? "";
+  useEffect(() => {
+    if (!proposedFor) return;
+    setActiveTab("employee");
+    setSelectedEmployee(proposedFor);
+    setEditedSalary(null);
+    setIsEditing(false);
+  }, [proposedFor]);
+
+  // Publish what this page is showing, so get_page_context can answer
+  // "what is the human looking at?" without guessing from the route.
+  const savedStructureCount = Object.keys(employeeSalaries).length;
+  const hasCompanyStructure = !!companyStructure;
+  useEffect(() => {
+    canvas.publishContext({
+      page: "Salary Structure",
+      restricted: !isAdmin,
+      tab: activeTab,
+      selectedEmployeeId: selectedEmployee || null,
+      employeesSelectable: employees.length,
+      employeesWithSavedStructure: savedStructureCount,
+      companyStructureSaved: hasCompanyStructure,
+      humanIsEditing: isEditing || isEditingCompany,
+      agentProposalOnScreen: proposedFor || null,
+    });
+  }, [
+    isAdmin, activeTab, selectedEmployee, employees.length, savedStructureCount,
+    hasCompanyStructure, isEditing, isEditingCompany, proposedFor,
+  ]);
 
   if (!isAdmin) {
     return (
@@ -145,6 +183,7 @@ export default function SalaryInfo() {
 
           {/* Employee Salary Tab */}
           <TabsContent value="employee" className="mt-4 space-y-6">
+            <SalaryProposalPanel />
             <Card className="border-border shadow-sm">
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">

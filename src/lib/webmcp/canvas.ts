@@ -67,6 +67,43 @@ export interface BonusPlanCanvas {
   note: string;
 }
 
+/** One component of a salary the agent has worked out but nobody has saved. */
+export interface SalaryProposalLine {
+  /** Key on EmployeeSalary, so the panel and the commit tool agree on the field. */
+  field: string;
+  label: string;
+  current: number;
+  proposed: number;
+  /** How the figure was reached, e.g. "40% of ₹1,50,000 monthly CTC". */
+  math: string;
+  kind: "earning" | "deduction" | "employer";
+}
+
+/**
+ * A salary structure drawn on the human's Salary Structure page.
+ *
+ * The agent can compute this but cannot save it: `commit_salary_structure`
+ * accepts no amounts and writes only what is sitting here, so the figure that
+ * reaches payroll is always the figure the human read on screen.
+ */
+export interface SalaryProposalCanvas {
+  employeeId: string;
+  employeeName: string;
+  /** Plain-language basis: "target CTC ₹18,00,000/yr", "12% raise on current". */
+  basis: string;
+  monthlyCtc: number;
+  lines: SalaryProposalLine[];
+  currentGross: number;
+  proposedGross: number;
+  currentNet: number;
+  proposedNet: number;
+  /** Gross plus employer PF — what the company actually spends. */
+  employerCost: number;
+  note: string;
+  /** Things HR should look at before saving (rounding, big jumps, missing config). */
+  warnings: string[];
+}
+
 export interface CanvasState {
   /** Route the agent asked us to open; cleared once the router honors it. */
   pendingRoute: string | null;
@@ -86,6 +123,8 @@ export interface CanvasState {
   highlightContributionIds: string[];
   /** Proposed bonus split / award shortlist rendered on the Bonuses page. */
   bonusPlan: BonusPlanCanvas | null;
+  /** Proposed salary structure rendered on the Salary Structure page. */
+  salaryProposal: SalaryProposalCanvas | null;
   /** Bumped on every agent action so components can re-run animations. */
   pulse: number;
   /** What the visible page is currently showing (published by pages). */
@@ -104,6 +143,7 @@ const INITIAL: CanvasState = {
   focusContributorId: null,
   highlightContributionIds: [],
   bonusPlan: null,
+  salaryProposal: null,
   pulse: 0,
   pageContext: {},
 };
@@ -198,6 +238,17 @@ class CanvasStore {
     this.set({ bonusPlan: null, focusContributorId: null, highlightContributionIds: [] }, false);
   }
 
+  // ---------------- salary canvas ----------------
+
+  /** Draw a proposed salary structure on the Salary Structure page. Writes nothing. */
+  showSalaryProposal(proposal: SalaryProposalCanvas) {
+    this.set({ pendingRoute: "/salary-info", salaryProposal: proposal });
+  }
+
+  clearSalaryProposal() {
+    this.set({ salaryProposal: null }, false);
+  }
+
   // ---------------- app-facing plumbing ----------------
 
   /** Called by the router bridge once a pending navigation is honored. */
@@ -234,6 +285,15 @@ class CanvasStore {
             window: s.bonusPlan.window,
             people: s.bonusPlan.lines.length,
             approved: false,
+          }
+        : null,
+      salaryProposalOnScreen: s.salaryProposal
+        ? {
+            employeeId: s.salaryProposal.employeeId,
+            employeeName: s.salaryProposal.employeeName,
+            basis: s.salaryProposal.basis,
+            proposedNetMonthly: s.salaryProposal.proposedNet,
+            saved: false,
           }
         : null,
     };

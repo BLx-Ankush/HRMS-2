@@ -166,11 +166,14 @@ This project is under active development! Upcoming features and improvements inc
 ## 🤖 WebMCP Agent (Cooperative Human + AI)
 
 This app is also a **WebMCP Challenge** entry. The admin's core workflows —
-adding/updating employees and approving/rejecting leave — are exposed as WebMCP
+onboarding and updating employees, deciding leave, verifying contributions,
+splitting a bonus pool and setting a salary structure — are exposed as WebMCP
 tools on `document.modelContext`, so a browser-native AI agent can operate the
 *real* application. Every change pauses on a human-approval dialog: **the agent
-drafts, the human commits.** There's also an in-page, bring-your-own-key agent so
-the flow is reproducible in any browser with no secret shipped in the frontend.
+drafts, the human commits.** The two tools that touch money take no amounts at
+all — they commit only the proposal already drawn on the human's screen. There's
+also an in-page, bring-your-own-key agent so the flow is reproducible in any
+browser with no secret shipped in the frontend.
 
 See **[WEBMCP.md](./WEBMCP.md)** for the architecture, tool list, security model,
 and a step-by-step demo script.

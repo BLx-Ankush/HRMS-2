@@ -26,9 +26,9 @@ bot acting on its own.
 
 ## What the agent can do
 
-**25 tools**, scoped by role: every signed-in user gets the page-state and own-record tools;
-the roster, leave, verification and bonus tools are registered **only** for admins, so an
-employee's agent cannot even see them.
+**28 tools**, scoped by role: every signed-in user gets the page-state and own-record tools;
+the roster, leave, verification, bonus and salary tools are registered **only** for admins, so
+an employee's agent cannot even see them.
 
 ### Tools a server-side API could not provide
 
@@ -42,11 +42,13 @@ or writes state that exists **only inside the human's live tab**:
 | `read_contribution_import` | Reads a work-export file the HR user dropped onto the page. It was parsed in the tab and **never uploaded** — there is no URL a server could fetch |
 | `propose_bonus_pool` / `get_award_shortlist` | Compute a payout split or award shortlist and **draw it on HR's screen** as an unsaved proposal |
 | `record_bonus_decision` | Takes **no amounts as arguments** — it commits the proposal held in live page state, so an agent cannot pay out a figure the human never saw |
+| `propose_salary_structure` | Derives a full component breakdown from a target CTC or a raise and **draws it on the Salary Structure page**, each line beside its current value and the arithmetic that produced it |
+| `commit_salary_structure` | Also takes **no amounts** — it writes the breakdown rendered in live page state, so the figure that reaches payroll is always the figure a human read on screen |
 
 ### Read tools
 
-- `get_policy`, `get_scoring_model` — the company's own rules, so the agent quotes policy
-  instead of inventing it
+- `get_policy`, `get_scoring_model`, `get_salary_model` — the company's own rules, so the agent
+  quotes policy (and the real component split and PF rates) instead of inventing it
 - `list_employees`, `get_employee`, `list_leave_requests`, `get_compensation`
 - `get_capacity_matrix`, `check_leave_coverage` — deterministic simulation of who would be
   left covering what if a leave request were approved
@@ -65,6 +67,9 @@ or writes state that exists **only inside the human's live tab**:
 - `log_contribution` — file your own work as a claim; filing under someone else's ID is refused
 - `verify_contribution` — HR verifies or rejects a claim; only verified rows ever score
 - `review_pending_contributions` — highlights the unreviewed backlog on HR's screen
+- `propose_salary_structure` — derive a full breakdown from intent alone ("18 lakh", "12%") and
+  draw it, unsaved, on HR's Salary Structure page; the agent may not pass component amounts
+- `commit_salary_structure` — saves the breakdown on screen, nothing else
 - `record_bonus_decision` — the only tool that commits money
 
 Because the tools call the **exact same Supabase logic the UI hooks use**
@@ -113,6 +118,13 @@ Key pieces (all under `src/lib/webmcp/` and `src/components/`):
   the correct privacy behaviour.
 - **`bonusTools.ts`** — contribution and bonus tools, split into an everyone-tier and an
   admin-tier builder.
+- **`salaryModel.ts` + `salaryTools.ts` + `SalaryProposalPanel.tsx`** — the salary path. The
+  model is pure and published (`get_salary_model`), so the agent contributes *intent* — a
+  target CTC or a raise percentage — and never a rupee figure: basic, HRA, LTA, performance,
+  standard and fixed allowance, PF both sides and professional tax are all derived here from
+  the company's own configured rates, each line carrying the arithmetic that produced it.
+  `propose_salary_structure` draws the result unsaved beside the current figures;
+  `commit_salary_structure` accepts no amounts and writes only what is on screen.
 - **`useWebMcpTools.ts`** — registers the role-appropriate tool set while a user is signed in
   and tears it down via `AbortController` on logout/role change.
 - **`agentClient.ts` + `AgentPanel.tsx`** — an in-page, **bring-your-own-key** agent so the
@@ -137,11 +149,12 @@ Two honest framings ship with it, in the UI *and* in every tool response:
 
 ## Security model
 
-- **Role-scoped tools.** Write, verification and bonus tools are registered only for the
+- **Role-scoped tools.** Write, verification, bonus and salary tools are registered only for the
   admin role and unregistered on logout via `AbortController`.
 - **Human approval on every write.** Nothing mutates without an explicit Confirm.
-- **The money tool cannot invent a number.** `record_bonus_decision` takes no amounts; it
-  commits the proposal already rendered on the human's screen.
+- **The money tools cannot invent a number.** `record_bonus_decision` and
+  `commit_salary_structure` take no amounts; each commits only what is already rendered on the
+  human's screen, and the approval dialog shows every component old against new.
 - **The imported file never leaves the browser.** It is parsed in-tab and held in memory only.
 - **No secrets in the frontend.** The in-page agent is bring-your-own-key; the native path
   uses the browser's own agent, so no API key ships in our bundle.
@@ -182,6 +195,10 @@ Two honest framings ship with it, in the UI *and* in every tool response:
 4. **The in-tab file trick:** drop a CSV or JSON work export onto the import card on the
    Bonuses page, then ask the agent *"what's in the file I just loaded?"* — it can read it,
    and nothing was uploaded anywhere.
+5. **Salary, from intent only:** ask *"put EMP007 on a CTC of 18 lakh"* or *"give EMP003 a 12%
+   raise"*. The breakdown appears on the Salary Structure page — every component beside its
+   current value, with the arithmetic — and stays unsaved until you (or a follow-up
+   *"save it"*, which routes through the approval dialog) commit exactly what is displayed.
 
 ## Non-goals
 
