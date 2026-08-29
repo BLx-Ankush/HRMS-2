@@ -492,4 +492,4 @@ If you have any questions or need help, please:
 
 ---
 
-**Built with ❤️ by the Team: " THE HONOURED ONES"**
+**Developed with ❤️ by: " ANKUSH KUMAR M "**
