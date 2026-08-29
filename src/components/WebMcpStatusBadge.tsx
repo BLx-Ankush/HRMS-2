@@ -63,9 +63,12 @@ export function WebMcpStatusBadge() {
           {!live && (
             <p className="mb-2 text-muted-foreground">
               No in-browser agent surface detected here — tools still work via the
-              in-page agent panel. For the native path, open this page in the
-              ChatGPT desktop app's built-in browser using <strong>GPT-5.6 Sol</strong> or{" "}
-              <strong>Terra</strong> (Luna has WebMCP disabled), with{" "}
+              in-page agent panel. For the native path, either enable{" "}
+              <code>chrome://flags/#enable-webmcp-testing</code> in Google Chrome and
+              relaunch (then inspect the tools under{" "}
+              <strong>DevTools → Application → WebMCP</strong>), or open this page in
+              the ChatGPT desktop app's built-in browser using <strong>GPT-5.6 Sol</strong>{" "}
+              or <strong>Terra</strong> (Luna has WebMCP disabled), with{" "}
               <strong>Settings → Browser → Permissions → Enable site tools</strong> on.
               This badge re-checks automatically once an agent attaches.
             </p>

@@ -1,0 +1,32 @@
+Ananya Rao
+Role applied for: Senior Backend Engineer
+Team: Engineering
+Bengaluru, Karnataka
+ananya.rao@dayflow.com
++91 98765 43210
+Offer accepted, start date 2026-09-15
+
+SKILLS: TypeScript, Node, PostgreSQL, Redis, Docker, Kubernetes
+
+SUMMARY
+Four years building payments and reconciliation services. Comfortable owning a
+service end to end, from schema design to on-call.
+
+EXPERIENCE
+Zeta Payments, Bengaluru — Backend Engineer, 2023 to 2026
+  - Rebuilt the settlement reconciliation job; cut the nightly run from
+    52 minutes to 9 and removed a class of duplicate-credit bugs.
+  - Led the migration of 14 services off a shared database into
+    per-service schemas with no customer-visible downtime.
+  - Ran the on-call rotation for the payouts domain for 18 months.
+
+Instalabs, Pune — Associate Engineer, 2021 to 2023
+  - Built the internal invoicing API used by the finance team.
+  - Wrote the load-testing harness still used for release gating.
+
+EDUCATION
+B.E. Information Science and Engineering
+Visvesvaraya Technological University, 2017 to 2021
+
+REFERENCES
+Available on request.

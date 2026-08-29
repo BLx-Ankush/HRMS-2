@@ -151,6 +151,82 @@ Key pieces (all under `src/lib/webmcp/` and `src/components/`):
   in the frontend**. The key is sent directly from the browser to OpenAI and stored only
   locally.
 
+## Registration lifecycle and role scoping
+
+`registry.ts` resolves the surface once — `document.modelContext` first, the deprecated
+`navigator.modelContext` as a fallback — and publishes one tool per `registerTool` call. Two
+details of the real API the first version got wrong:
+
+**`registerTool` is async and rejects.** Per spec it returns a promise that rejects on a
+duplicate name, an empty name or description, or an invalid input schema. A bare `try/catch`
+sees none of that, so the registry claims the name up front, tracks the returned promise, and
+only counts a tool as natively registered once it resolves — which is why the badge can report
+`Registered 31 / 31` honestly instead of assuming success.
+
+**The surface can arrive late.** Some clients inject `modelContext` only when their agent
+attaches to the page, which is after React has mounted. The registry therefore polls for a
+late-injected surface and re-publishes, rather than probing once at startup and giving up.
+
+**Teardown is the spec's `AbortSignal`.** Each publish passes the signal from an
+`AbortController` owned by the session. Signing out — or a role change — aborts it, which
+retracts the tools; `unregisterTool` is also called where the build exposes it, and the local
+mirror is cleared either way so a later publish is not mistaken for a duplicate.
+
+Scoping is composition, not filtering (`useWebMcpTools.ts`). Nothing is registered for anonymous
+visitors. A signed-in user always gets the same **11**; the admin bundles are appended only when
+the role is `admin`:
+
+| Bundle | Tools | Registered for |
+|--------|------:|----------------|
+| `buildCanvasTools` — page state, UI driving, policy, coverage | 8 | any signed-in user |
+| `buildContributionTools` — own contributions, scoring model | 3 | any signed-in user |
+| `buildAdminTools` — roster and leave | 7 | admin only |
+| `buildBonusAdminTools` — board, verification, import, proposals | 7 | admin only |
+| `buildSalaryAdminTools` | 3 | admin only |
+| `buildExpenseAdminTools` | 3 | admin only |
+| **Employee total** | **11** | |
+| **Admin total** | **31** | |
+
+So the tool list an employee session exposes is short because the other twenty were never
+created for it — and, independently, because the database would refuse them anyway (see
+[Security model](#security-model)).
+
+## Tool shape — input and output
+
+Every tool declares a JSON Schema `inputSchema` with `additionalProperties: false`, and returns
+MCP content blocks. A read tool returns JSON as text:
+
+```js
+{
+  name: "get_page_context",
+  inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+  annotations: { readOnlyHint: true, idempotentHint: true },
+  // → { content: [{ type: "text", text: "{\"route\":\"/employees\",\"visibleRows\":[…]}" }] }
+}
+```
+
+A commit tool that touches money declares **no amount at all** — the whole point:
+
+```js
+{
+  name: "record_expense_decision",
+  inputSchema: {
+    type: "object",
+    properties: {
+      decision: { type: "string", enum: ["approve", "return"] },
+      reason:   { type: "string", description: "One line for the record" },
+      decidedBy:{ type: "string", description: "Defaults to the signed-in HR user" },
+    },
+    required: [], additionalProperties: false,
+  },
+  annotations: { readOnlyHint: false, idempotentHint: false },
+  // reads canvas.getSnapshot().expenseAudit for the figures, then requireApproval()
+}
+```
+
+Failures return the same content shape with `isError: true` and a sentence a human can act on
+("No expense audit is on screen, so there is nothing to record"), rather than throwing.
+
 ## The bonus feature, and what it deliberately does not claim
 
 The Bonuses page tracks what people actually did — contributions logged in-app or imported
@@ -170,6 +246,14 @@ Two honest framings ship with it, in the UI *and* in every tool response:
 
 - **Role-scoped tools.** Write, verification, bonus, salary and expense tools are registered only
   for the admin role and unregistered on logout via `AbortController`.
+- **Registration is not the security boundary — the database is.** Withholding a tool from an
+  employee session is a UX and protocol decision, not a defence: anything reachable from the page
+  is reachable from the console. So every admin capability is *independently* enforced server-side
+  by Postgres row-level security calling `public.is_admin()`
+  (`supabase/migrations/0001_init.sql:143`), which reads the caller's own role from their JWT.
+  An employee who hand-invokes an admin tool, or who calls Supabase directly bypassing the tools
+  altogether, gets the same refusal from the database. The shrinking tool list on camera is the
+  visible half of a rule that is also true underneath.
 - **Human approval on every write.** Nothing mutates without an explicit Confirm.
 - **The money tools cannot invent a number.** `record_bonus_decision`,
   `commit_salary_structure` and `record_expense_decision` take no amounts; each commits only what

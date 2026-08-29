@@ -1,0 +1,31 @@
+The Fig Tree Kitchen & Bar
+Indiranagar, Bengaluru
+GSTIN: 29AAGCF4721K1ZP
+Phone: 080 4123 7788
+Bill No: 4127
+Date: 26/08/2026
+Time: 20:42
+Table: 12   Covers: 4
+Server: Rakesh
+
+Item                                Amount
+Masala Papad x2 ....................  180.00
+Paneer Tikka Platter ...............  520.00
+Paneer Butter Masala x2 ............  640.00
+Dal Makhani ........................  360.00
+Butter Naan x6 .....................  330.00
+Jeera Rice x2 ......................  380.00
+Gulab Jamun x4 .....................  260.00
+Filter Coffee x4 ...................  240.00
+Kingfisher Premium Pint x3 .........  690.00
+House Red Wine Glass x2 ............  760.00
+Single Malt Whisky 60ml ............  950.00
+
+Subtotal ........................... 5310.00
+Service Charge @10% ................  531.00
+CGST 2.5% ..........................  146.00
+SGST 2.5% ..........................  146.00
+Grand Total ........................ 6133.00
+
+Paid by Card - VISA ****4417
+Thank you, visit again!

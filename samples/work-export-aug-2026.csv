@@ -1,0 +1,13 @@
+author_login,pr_title,labels,priority,merged_at,html_url
+mike.brown,Add retry with exponential backoff to the payroll export job,bug,P1,2026-08-25T11:42:08Z,https://github.com/dayflow/hrms/pull/812
+mike.brown,"Fix duplicate check-ins, and add the missing attendance index",hotfix,P1,2026-08-21T07:15:44Z,https://github.com/dayflow/hrms/pull/804
+priya.raghavan,Ship the attendance bulk-edit endpoint,feature,P2,2026-08-24T16:03:19Z,https://github.com/dayflow/hrms/pull/809
+rohan.deshpande,Harden the deploy smoke test against flaky DNS,chore,P2,2026-08-22T05:58:02Z,https://github.com/dayflow/hrms/pull/806
+meera.nair,Refactor the salary table for keyboard navigation,refactor,P3,2026-08-20T12:31:57Z,https://github.com/dayflow/hrms/pull/801
+ankush,Document the WebMCP approval flow in the runbook,docs,P3,2026-08-19T09:22:40Z,https://github.com/dayflow/hrms/pull/799
+john.smith,Add pagination to the employee directory,feature,P2,2026-08-18T14:47:11Z,https://github.com/dayflow/hrms/pull/795
+nathan.brooks,Triage the August support backlog to zero,support,P4,2026-08-17T10:05:36Z,https://github.com/dayflow/hrms/pull/791
+daniel.whitaker,Onboard two new AEs onto the CRM playbook,onboarding,P2,2026-08-14T08:19:23Z,https://github.com/dayflow/hrms/pull/787
+lisa.chen,Reconcile the Q2 expense ledger against payroll,chore,P2,2026-08-13T13:52:09Z,https://github.com/dayflow/hrms/pull/784
+dependabot[bot],Bump vite from 5.4.2 to 5.4.11,dependencies,P4,2026-08-12T02:11:00Z,https://github.com/dayflow/hrms/pull/780
+grace.whitman,,chore,P3,2026-08-11T15:36:52Z,https://github.com/dayflow/hrms/pull/778
