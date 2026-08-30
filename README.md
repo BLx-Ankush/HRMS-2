@@ -329,8 +329,7 @@ dialog.
 | `audit_expense_claim` | Calculate + Propose | Applies Finance Policy §7 line by line and marks up the human's screen |
 | `record_expense_decision` | Commit | **Takes no amounts** — commits the canvas snapshot |
 
-See **[WEBMCP.md](./WEBMCP.md)** for the architecture, security model, and a step-by-step demo
-script.
+> 📖 **Deep Dive Documentation:** See [`WEBMCP.md`](./WEBMCP.md) for the complete architecture diagram, security model, and step-by-step evaluation scripts.
 
 ## 🎯 Usage
 
