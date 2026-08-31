@@ -308,19 +308,19 @@ dialog.
 
 | Tool | Capability | Notes |
 |------|-----------|-------|
-| `list_employees` | Read | |
-| `get_employee` | Read | |
-| `list_leave_requests` | Read | |
+| `list_employees` | Read |Optionally filter by a free-text query (matches name, email, employee ID, position), department, or status. |
+| `get_employee` | Read |Fetch a single employee's full profile by employee ID |
+| `list_leave_requests` | Read |List leave requests. Optionally filter by status (pending/approved/rejected). Use this to find the requestId before approving or rejecting. |
 | `add_employee` | Commit | Fully specified employee |
 | `add_employee_from_description` | Commit | Derives ID, work email and department from prose; the dialog labels every field *stated* or *derived* |
-| `update_employee` | Commit | |
+| `update_employee` | Commit |Update fields on an existing employee. Only the fields you provide are changed. Asks the admin to confirm before saving |
 | `decide_leave` | Commit | Approve or reject |
 | `get_contribution_scores` | Read | The leaderboard |
 | `review_pending_contributions` | Read | Unverified claims queue |
 | `verify_contribution` | Commit | Verifying is what makes a claim score |
 | `read_contribution_import` | Read | Reads the CSV parsed **in this tab**; never uploaded |
 | `propose_bonus_pool` | Propose | Splits a pool by score onto the canvas |
-| `get_award_shortlist` | Calculate | |
+| `get_award_shortlist` | Calculate |Rank the strongest contributors for an award, state the tie-break order used, and flag when the top two are too close for the evidence to separate them. Draws the shortlist on the HR user's screen. Use for 'who deserves employee of the month', and report the too-close-to-call flag if it is set instead of picking for them |
 | `record_bonus_decision` | Commit | **Takes no amounts** — commits the canvas snapshot |
 | `get_salary_model` | Read | PF, professional tax and the earnings split actually in force |
 | `propose_salary_structure` | Propose | Full CTC breakdown onto the canvas |
